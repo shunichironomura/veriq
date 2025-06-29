@@ -38,8 +38,8 @@ def verify_ground_station(model: GroundStationModel) -> bool:
     # Here we would implement the actual verification logic.
     return model.antenna_size > 0
 
-@vq.requirement
-def ground_station_requirement() -> None:
+# @vq.requirement
+def ground_station_requirement() -> vq.Requirement:
     """Requirement for the ground station."""
     return vq.Requirement(
         "The ground station shall be able to receive telemetry data from the satellite.",
