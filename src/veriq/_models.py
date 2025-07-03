@@ -3,7 +3,7 @@ from __future__ import annotations
 import queue
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Literal, Self
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -49,7 +49,18 @@ class ContextMixin:
 
 
 @dataclass
-class Requirement(ContextMixin): ...
+class Requirement(ContextMixin):
+    def __post_init__(self) -> None:
+        if (current_scope := Scope.current()) is not None:
+            current_scope.add_requirement(self)
+
+
+TRequirementDecompositionLevel = Literal["conservative", "aggressive"]
+
+
+@dataclass
+class DecomposedRequirements(ContextMixin):
+    level: TRequirementDecompositionLevel
 
 
 @dataclass
@@ -65,6 +76,8 @@ class Scope(ContextMixin):
     def iter_models(self) -> Iterable:
         """Iterate over models in the scope."""
         raise NotImplementedError
+
+    def add_requirement(self, requirement: Requirement) -> None: ...
 
 
 class Depends: ...
