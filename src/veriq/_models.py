@@ -3,7 +3,7 @@ from __future__ import annotations
 import queue
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, ClassVar, Literal, Self
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -21,7 +21,11 @@ class Verification: ...
 class ContextMixin:
     """A mixin class for context management."""
 
-    _thread_local = threading.local()
+    _thread_local: ClassVar[threading.local]
+
+    def __init_subclass__(cls, *args: object, **kwargs: object) -> None:
+        super().__init_subclass__(*args, **kwargs)
+        cls._thread_local = threading.local()
 
     @classmethod
     def _get_stack(cls) -> queue.LifoQueue[Self]:
