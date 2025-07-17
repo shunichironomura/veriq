@@ -86,6 +86,11 @@ def check_models_compatibility(comm_model: CommunicationSubsystemModel, ground_m
     return True
 
 
+print("\nModel Compatibility Checks:")
+for compatibility in satellite.model_compatibilities:
+    print(f"{compatibility.model_a.__name__} and {compatibility.model_b.__name__} compatibility: {compatibility.func}")
+
+print("\nSatellite Model Schema:")
 print(satellite.model_schema())
 
 design = {
