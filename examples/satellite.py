@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from pydantic import BaseModel
+from rich import print  # noqa: A004
 
 import veriq as vq
 
@@ -40,9 +41,8 @@ def verify_ground_station(model: GroundStationModel) -> bool:
     return model.antenna_size > 0
 
 
-# @vq.requirement
 def ground_station_requirement() -> vq.Requirement:
-    """Requirement for the ground station."""
+    """Requirement factory function for the ground station."""
     return vq.Requirement(
         "The ground station shall be able to receive telemetry data from the satellite.",
         verified_by=verify_ground_station,
@@ -57,29 +57,24 @@ satellite = vq.Scope("Satellite")
 with satellite:
     # Requirements definition
     req_comm = vq.Requirement("The satellite shall communicate with the ground station.")
-    with req_comm.decompose(level="conservative"):
+    with req_comm:
         vq.Requirement("The satellite shall transmit telemetry data.", verified_by=verify_telemetry_function)
         vq.Requirement(
             "The satellite shall receive commands from the ground station.",
         )  # No verification method provided!
         ground_station_requirement()  # reuses the ground station requirement defined earlier
-    with req_comm.decompose(level="aggressive"):
-        vq.Requirement(
-            "The satellite shall transmit telemetry data with a bandwidth of at least 1000 Hz.",
-            verified_by=verify_telemetry_function,
-        )
-        vq.Requirement(
-            "The satellite shall receive commands from the ground station with a latency of less than 1 second.",
-        )
 
+print("Satellite Scope Requirements:")
 for req in satellite.iter_requirements():
     print(req)
 
+print("\nLeaf Requirements in Satellite Scope:")
 for req in satellite.iter_leaf_requirements():
     # Leaf requirements are those that do not have any child requirements.
     # Leaf requirements should be associated with verification method.
     print(req)
 
+print("\nModels in Satellite Scope:")
 for model in satellite.iter_models():
     print(model)
 
@@ -91,14 +86,13 @@ def check_models_compatibility(comm_model: CommunicationSubsystemModel, ground_m
     return True
 
 
-print(satellite.design_schema())
+print(satellite.model_schema())
 
-design = satellite.design(
-    {
-        "communication": CommunicationSubsystemModel(frequency=1500.0),
-        "ground_station": GroundStationModel(location="Cape Canaveral", antenna_size=5.0),
-    },
-)
+design = {
+    "CommunicationSubsystemModel": CommunicationSubsystemModel(frequency=1500.0),
+    "GroundStationModel": GroundStationModel(location="Cape Canaveral", antenna_size=5.0),
+}
+
 
 result = satellite.verify_design(design)
 print("Design verification result:", result)
