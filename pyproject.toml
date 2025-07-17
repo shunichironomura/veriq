@@ -94,4 +94,5 @@ unfixable = [
     "S101",    # use of assert
     "T201",    # Use of print function
     "PLR2004", # magic numbers
+    "ARG001",  # Unused function argument
 ]
