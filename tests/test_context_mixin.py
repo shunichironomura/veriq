@@ -1,4 +1,4 @@
-from veriq._models import ContextMixin
+from veriq._utils import ContextMixin
 
 
 class TestContextMixin(ContextMixin):

@@ -53,10 +53,14 @@ satellite = vq.Scope("Satellite")
 
 with satellite:
     # Requirements definition
-    with vq.Requirement("The satellite shall communicate with the ground station."):
+    req_comm = vq.Requirement("The satellite shall communicate with the ground station.")
+    with req_comm.decompose(level="conservative"):
         vq.Requirement("The satellite shall transmit telemetry data.", verified_by=verify_telemetry_function)
         vq.Requirement("The satellite shall receive commands from the ground station.") # No verification method provided!
         ground_station_requirement() # reuses the ground station requirement defined earlier
+    with req_comm.decompose(level="aggressive"):
+        vq.Requirement("The satellite shall transmit telemetry data with a bandwidth of at least 1000 Hz.", verified_by=verify_telemetry_function)
+        vq.Requirement("The satellite shall receive commands from the ground station with a latency of less than 1 second.")
 
 for req in satellite.iter_requirements():
     print(req)

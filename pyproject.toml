@@ -7,7 +7,7 @@ authors = [
     { name = "Shunichiro Nomura", email = "nomura@space.t.u-tokyo.ac.jp" },
 ]
 requires-python = ">=3.13"
-dependencies = ["pydantic>=2.11.7"]
+dependencies = ["pydantic>=2.11.7", "rich>=14.0.0"]
 
 [build-system]
 requires = ["uv_build>=0.7.19,<0.8.0"]
@@ -63,9 +63,9 @@ ignore = [
     #     "PGH003",  # Use specific rule codes when ignoring type issues
     #     "RET505",  # Unnecessary `else` after `return` statement
     "ANN401", # Dynamically typed expressions (typing.Any) are disallowed
-    #     "D401",    # First line should be in imperative mood
-    "TD002", # Missing author in TODO
-    "TD003", # add link on issue into TODO
+    "D401",   # First line should be in imperative mood
+    "TD002",  # Missing author in TODO
+    "TD003",  # add link on issue into TODO
     #     "PLR0913", # Too many arguments to function call
     #     "D407",    # Missing dashed underline after section
     #     "ERA001",  # Commented out code
@@ -86,4 +86,12 @@ unfixable = [
     "INP001", # implicit-namespace-package
     "ANN201", # missing-return-type-undocumented-public-function
     "S101",   # use of assert
+]
+"examples/**.py" = [
+    "D",       # Docstring
+    "INP001",  # implicit-namespace-package
+    "ANN201",  # missing-return-type-undocumented-public-function
+    "S101",    # use of assert
+    "T201",    # Use of print function
+    "PLR2004", # magic numbers
 ]
