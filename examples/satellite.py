@@ -52,7 +52,9 @@ def ground_station_requirement() -> vq.Requirement:
 satellite = vq.Scope("Satellite")
 # There should be one instance of a Model per Scope.
 # If you want to have multiple instances of a CommunicationSubsystemModel,
-# you need to create a new Scope for each instance.
+# you need to create a new Scope for each instance, or you can define a parent model like this:
+# class ParentModel(BaseModel):
+#     child_models: list[ChildModel]
 
 with satellite:
     # Requirements definition
@@ -86,6 +88,11 @@ def check_models_compatibility(comm_model: CommunicationSubsystemModel, ground_m
     return True
 
 
+print("\nModel Compatibility Checks:")
+for compatibility in satellite.model_compatibilities:
+    print(f"{compatibility.model_a.__name__} and {compatibility.model_b.__name__} compatibility: {compatibility.func}")
+
+print("\nSatellite Model Schema:")
 print(satellite.model_schema())
 
 design = {

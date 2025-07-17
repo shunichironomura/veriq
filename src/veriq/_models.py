@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, get_args, get_origin, overload
+from typing import TYPE_CHECKING, Any, get_args
 
 from pydantic import BaseModel
 from typing_extensions import _AnnotatedAlias
@@ -65,7 +65,7 @@ class Calculation[T, **P]:
         """Evaluate the calculation against a design."""
         model_args = {name: design[model.__name__] for name, model in self.model_deps.items()}
         calc_args = {name: calc_dep.calculation.eval(design) for name, calc_dep in self.calc_deps.items()}
-        return self.func(**model_args, **calc_args)
+        return self.func(**model_args, **calc_args)  # type: ignore[call-arg,arg-type]
 
 
 @dataclass
@@ -90,7 +90,7 @@ class Verification[**P]:
         """Evaluate the verification against a design."""
         model_args = {name: design[model.__name__] for name, model in self.model_deps.items()}
         calc_args = {name: calc_dep.calculation.eval(design) for name, calc_dep in self.calc_deps.items()}
-        return self.func(**model_args, **calc_args)
+        return self.func(**model_args, **calc_args)  # type: ignore[call-arg,arg-type]
 
 
 @dataclass
@@ -109,7 +109,7 @@ class Requirement(ContextMixin):
 
     description: str
     decomposed_requirements: list[Requirement] = field(default_factory=list, repr=False)
-    verified_by: Verification[[BaseModel]] | None = None
+    verified_by: Verification[...] | None = None
 
     def iter_requirements(self, *, depth: int | None = None) -> Iterable[Requirement]:
         """Iterate over requirements in the current context."""
@@ -142,7 +142,7 @@ class Scope(ContextMixin):
     name: str
     requirements: list[Requirement] = field(default_factory=list)
     child_scopes: list[Scope] = field(default_factory=list)
-    model_compatibilities: list[ModelCompatibility] = field(default_factory=list)
+    model_compatibilities: list[ModelCompatibility[Any, Any]] = field(default_factory=list)
 
     def iter_requirements(
         self,
@@ -170,7 +170,7 @@ class Scope(ContextMixin):
         *,
         include_child_scopes: bool = False,
         leaf_only: bool = True,
-    ) -> Iterable[Verification]:
+    ) -> Iterable[Verification[...]]:
         """Iterate over verifications in the scope."""
         iterator = (
             self.iter_leaf_requirements(include_child_scopes=include_child_scopes)
@@ -203,7 +203,7 @@ class Scope(ContextMixin):
         self,
         func: Callable[[MA, MB], bool],
         /,
-    ) -> ModelCompatibility[MA, MB]:
+    ) -> Callable[[MA, MB], bool]:
         """Decorator to mark a function as a model compatibility check."""
         sig = inspect.signature(func)
         model_a, model_b = tuple(
@@ -212,9 +212,9 @@ class Scope(ContextMixin):
             if isinstance(param.annotation, type) and issubclass(param.annotation, BaseModel)
         )
 
-        compatibility = ModelCompatibility(model_a=model_a, model_b=model_b, func=func)
+        compatibility = ModelCompatibility(model_a=model_a, model_b=model_b, func=func)  # type: ignore[arg-type]
         self.model_compatibilities.append(compatibility)
-        return compatibility
+        return func
 
     def model_schema(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> dict[str, type[BaseModel]]:
         """Get the schema of models in the scope."""
@@ -244,4 +244,4 @@ class Scope(ContextMixin):
 class Depends:
     """A class to represent dependencies between calculations and verifications."""
 
-    calculation: Calculation
+    calculation: Calculation[Any, ...]
