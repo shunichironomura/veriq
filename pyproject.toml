@@ -95,4 +95,5 @@ unfixable = [
     "T201",    # Use of print function
     "PLR2004", # magic numbers
     "ARG001",  # Unused function argument
+    "ERA001",  # Commented out code
 ]
