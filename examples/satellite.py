@@ -1,4 +1,5 @@
 import json
+import tomllib
 from pathlib import Path
 from typing import Annotated
 
@@ -104,11 +105,12 @@ with schema_path.open("w") as f:
     json.dump(design_schema, f, indent=2)
 
 
-design = DesignModel(
-    CommunicationSubsystemModel=CommunicationSubsystemModel(frequency=1500.0),
-    GroundStationModel=GroundStationModel(location="Cape Canaveral", antenna_size=5.0),
-)
-
+with (Path(__file__).parent / "satellite-design.toml").open("rb") as f2:
+    design = DesignModel.model_validate(
+        tomllib.load(f2),
+    )
+print("\nDesign:")
+print(design)
 
 result = satellite.verify_design(design)
 print("Design verification result:", result)
