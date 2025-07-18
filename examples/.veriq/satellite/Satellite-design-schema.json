@@ -1,0 +1,51 @@
+{
+    "$defs": {
+        "CommunicationSubsystemModel": {
+            "description": "Model for the communication subsystem.",
+            "properties": {
+                "frequency": {
+                    "title": "Frequency",
+                    "type": "number"
+                }
+            },
+            "required": [
+                "frequency"
+            ],
+            "title": "CommunicationSubsystemModel",
+            "type": "object"
+        },
+        "GroundStationModel": {
+            "description": "Model for the ground station.",
+            "properties": {
+                "location": {
+                    "title": "Location",
+                    "type": "string"
+                },
+                "antenna_size": {
+                    "title": "Antenna Size",
+                    "type": "number"
+                }
+            },
+            "required": [
+                "location",
+                "antenna_size"
+            ],
+            "title": "GroundStationModel",
+            "type": "object"
+        }
+    },
+    "properties": {
+        "CommunicationSubsystemModel": {
+            "$ref": "#/$defs/CommunicationSubsystemModel"
+        },
+        "GroundStationModel": {
+            "$ref": "#/$defs/GroundStationModel"
+        }
+    },
+    "required": [
+        "CommunicationSubsystemModel",
+        "GroundStationModel"
+    ],
+    "title": "SatelliteDesign",
+    "type": "object"
+}

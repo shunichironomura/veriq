@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel
@@ -6,7 +8,6 @@ from rich import print  # noqa: A004
 import veriq as vq
 
 
-# We define verification first because we want to make it reusable.
 class CommunicationSubsystemModel(BaseModel):
     """Model for the communication subsystem."""
 
@@ -92,13 +93,21 @@ print("\nModel Compatibility Checks:")
 for compatibility in satellite.model_compatibilities:
     print(f"{compatibility.model_a.__name__} and {compatibility.model_b.__name__} compatibility: {compatibility.func}")
 
-print("\nSatellite Model Schema:")
-print(satellite.model_schema())
+print("\nSatellite Model:")
+DesignModel = satellite.design_model(include_child_scopes=True, leaf_only=True)
+print(DesignModel)
 
-design = {
-    "CommunicationSubsystemModel": CommunicationSubsystemModel(frequency=1500.0),
-    "GroundStationModel": GroundStationModel(location="Cape Canaveral", antenna_size=5.0),
-}
+design_schema = satellite.design_json_schema(include_child_scopes=True, leaf_only=True)
+schema_path = Path(__file__).parent / ".veriq" / Path(__file__).stem / "Satellite-design-schema.json"
+schema_path.parent.mkdir(parents=True, exist_ok=True)
+with schema_path.open("w") as f:
+    json.dump(design_schema, f, indent=2)
+
+
+design = DesignModel(
+    CommunicationSubsystemModel=CommunicationSubsystemModel(frequency=1500.0),
+    GroundStationModel=GroundStationModel(location="Cape Canaveral", antenna_size=5.0),
+)
 
 
 result = satellite.verify_design(design)
