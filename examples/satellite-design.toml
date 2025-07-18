@@ -1,0 +1,8 @@
+#:schema .veriq/satellite/Satellite-design-schema.json
+
+[CommunicationSubsystemModel]
+frequency = 1500.0
+
+[GroundStationModel]
+location = "Cape Canaveral"
+antenna_size = 5.0

@@ -4,10 +4,10 @@ import inspect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, get_args
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 from typing_extensions import _AnnotatedAlias
 
-from ._utils import ContextMixin
+from ._utils import ContextMixin, model_to_flat_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -189,6 +189,7 @@ class Scope(ContextMixin):
 
     def iter_models(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> Iterable[type[BaseModel]]:
         """Iterate over models in the scope."""
+        # TODO: Distinguish same model types in different scopes.
         for verification in self.iter_verifications(
             include_child_scopes=include_child_scopes,
             leaf_only=leaf_only,
@@ -216,26 +217,44 @@ class Scope(ContextMixin):
         self.model_compatibilities.append(compatibility)
         return func
 
-    def model_schema(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> dict[str, type[BaseModel]]:
+    def design_json_schema(
+        self,
+        *,
+        include_child_scopes: bool = False,
+        leaf_only: bool = True,
+    ) -> dict[str, Any]:
         """Get the schema of models in the scope."""
-        return {
-            model.__name__: model
-            for model in self.iter_models(include_child_scopes=include_child_scopes, leaf_only=leaf_only)
-        }
+        design_model = self.design_model(
+            include_child_scopes=include_child_scopes,
+            leaf_only=leaf_only,
+        )
+        return design_model.model_json_schema()
+
+    def design_model(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> type[BaseModel]:
+        """Get the design model for the scope."""
+        return create_model(  # type: ignore[no-any-return, call-overload]
+            f"{self.name}Design",
+            **{
+                model.__name__: model
+                for model in self.iter_models(include_child_scopes=include_child_scopes, leaf_only=leaf_only)
+            },
+        )
 
     def verify_design(
         self,
-        design: dict[str, BaseModel],
+        design: dict[str, BaseModel] | BaseModel,
         *,
         include_child_scopes: bool = False,
         leaf_only: bool = True,
     ) -> bool:
         """Verify the design against the scope's requirements."""
+        # TODO: Return more detailed verification results.
+        design_dict = design if isinstance(design, dict) else model_to_flat_dict(design)
         for verification in self.iter_verifications(
             include_child_scopes=include_child_scopes,
             leaf_only=leaf_only,
         ):
-            if not verification.eval(design):
+            if not verification.eval(design_dict):
                 return False
         return True
 
