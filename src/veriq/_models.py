@@ -5,9 +5,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, get_args
 
 from pydantic import BaseModel, create_model
+from scoped_context import ScopedContext, get_current_context
 from typing_extensions import _AnnotatedAlias
 
-from ._utils import ContextMixin, model_to_flat_dict
+from ._utils import model_to_flat_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -94,9 +95,9 @@ class Verification[**P]:
 
 
 @dataclass
-class Requirement(ContextMixin):
+class Requirement(ScopedContext):
     def __post_init__(self) -> None:
-        current_scope_or_requirement = ContextMixin.current_classwide((Scope, Requirement))
+        current_scope_or_requirement = get_current_context((Scope, Requirement))
         if isinstance(current_scope_or_requirement, Scope):
             current_scope_or_requirement.add_requirement(self)
         elif isinstance(current_scope_or_requirement, Requirement):
@@ -133,7 +134,7 @@ class ModelCompatibility[MA: BaseModel, MB: BaseModel]:
 
 
 @dataclass
-class Scope(ContextMixin):
+class Scope(ScopedContext):
     name: str
     requirements: list[Requirement] = field(default_factory=list)
     child_scopes: list[Scope] = field(default_factory=list)
