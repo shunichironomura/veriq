@@ -96,16 +96,11 @@ class Verification[**P]:
 @dataclass
 class Requirement(ContextMixin):
     def __post_init__(self) -> None:
-        for scope_or_requirement in ContextMixin.global_stack_queue()[::-1]:
-            if isinstance(scope_or_requirement, Scope):
-                scope_or_requirement.add_requirement(self)
-                break
-            if isinstance(scope_or_requirement, Requirement):
-                scope_or_requirement.decomposed_requirements.append(self)
-                break
-        else:
-            # If no scope or requirement was found, we could log a warning or handle it accordingly.
-            pass
+        current_scope_or_requirement = ContextMixin.current_classwide((Scope, Requirement))
+        if isinstance(current_scope_or_requirement, Scope):
+            current_scope_or_requirement.add_requirement(self)
+        elif isinstance(current_scope_or_requirement, Requirement):
+            current_scope_or_requirement.decomposed_requirements.append(self)
 
     description: str
     decomposed_requirements: list[Requirement] = field(default_factory=list, repr=False)
