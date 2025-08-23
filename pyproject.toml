@@ -7,7 +7,7 @@ authors = [
     { name = "Shunichiro Nomura", email = "nomura@space.t.u-tokyo.ac.jp" },
 ]
 requires-python = ">=3.13"
-dependencies = ["pydantic>=2.11.7", "rich>=14.0.0"]
+dependencies = ["pydantic>=2.11.7", "rich>=14.0.0", "scoped-context>=0.0.1"]
 
 [build-system]
 requires = ["uv_build>=0.7.19,<0.8.0"]

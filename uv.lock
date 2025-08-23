@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -300,6 +300,15 @@ wheels = [
 ]
 
 [[package]]
+name = "scoped-context"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/9a/6166bb0341381251a7cd385b84d0af7e118cfefdd7430b8485fa9451527a/scoped_context-0.0.1.tar.gz", hash = "sha256:aaf529ee820d1e81756e17dad5439127983e8b1e3211c7b5da043324b36bfe31", size = 4382, upload-time = "2025-08-23T12:30:02.971Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e9/b8/e9f25d5633043fc5462a36636a4fd64bb4c1ccff5b7a8cb751384d45ab28/scoped_context-0.0.1-py3-none-any.whl", hash = "sha256:27d597bcd721e978d3b6b59fd78c4135fd6a228f1ecd6ac4f6c188984e21cd51", size = 4491, upload-time = "2025-08-23T12:30:01.667Z" },
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -327,6 +336,7 @@ source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
     { name = "rich" },
+    { name = "scoped-context" },
 ]
 
 [package.dev-dependencies]
@@ -351,6 +361,7 @@ typing = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "rich", specifier = ">=14.0.0" },
+    { name = "scoped-context", specifier = ">=0.0.1" },
 ]
 
 [package.metadata.requires-dev]
