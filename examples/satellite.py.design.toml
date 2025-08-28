@@ -1,4 +1,4 @@
-#:schema .veriq/satellite/Satellite-design-schema.json
+#:schema satellite.py.schema.json
 
 [CommunicationSubsystemModel]
 frequency = 1500.0
