@@ -1,10 +1,6 @@
-import json
-import tomllib
-from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel
-from rich import print  # noqa: A004
 
 import veriq as vq
 
@@ -68,49 +64,9 @@ with satellite:
         )  # No verification method provided!
         ground_station_requirement()  # reuses the ground station requirement defined earlier
 
-print("Satellite Scope Requirements:")
-for req in satellite.iter_requirements():
-    print(req)
-
-print("\nLeaf Requirements in Satellite Scope:")
-for req in satellite.iter_leaf_requirements():
-    # Leaf requirements are those that do not have any child requirements.
-    # Leaf requirements should be associated with verification method.
-    print(req)
-
-print("\nModels in Satellite Scope:")
-for model in satellite.iter_models():
-    print(model)
-
 
 @satellite.model_compatibility
 def check_models_compatibility(comm_model: CommunicationSubsystemModel, ground_model: GroundStationModel) -> bool:
     """Check if the communication subsystem and ground station models are compatible."""
     # Here we would implement the actual compatibility check logic.
     return True
-
-
-print("\nModel Compatibility Checks:")
-for compatibility in satellite.model_compatibilities:
-    print(f"{compatibility.model_a.__name__} and {compatibility.model_b.__name__} compatibility: {compatibility.func}")
-
-print("\nSatellite Model:")
-DesignModel = satellite.design_model(include_child_scopes=True, leaf_only=True)
-print(DesignModel)
-
-design_schema = satellite.design_json_schema(include_child_scopes=True, leaf_only=True)
-schema_path = Path(__file__).parent / ".veriq" / Path(__file__).stem / "Satellite-design-schema.json"
-schema_path.parent.mkdir(parents=True, exist_ok=True)
-with schema_path.open("w") as f:
-    json.dump(design_schema, f, indent=2)
-
-
-with (Path(__file__).parent / "satellite-design.toml").open("rb") as f2:
-    design = DesignModel.model_validate(
-        tomllib.load(f2),
-    )
-print("\nDesign:")
-print(design)
-
-result = satellite.verify_design(design)
-print("Design verification result:", result)
