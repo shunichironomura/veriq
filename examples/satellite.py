@@ -57,12 +57,15 @@ satellite = vq.Scope("Satellite")
 with satellite:
     # Requirements definition
     req_comm = vq.Requirement("The satellite shall communicate with the ground station.")
+    req_att = vq.Requirement("The satellite shall have an three-axis stabilized attitude control system.")
+    req_tx = vq.Requirement("The satellite shall transmit telemetry data.", verified_by=verify_telemetry_function)
     with req_comm:
-        vq.Requirement("The satellite shall transmit telemetry data.", verified_by=verify_telemetry_function)
         vq.Requirement(
             "The satellite shall receive commands from the ground station.",
         )  # No verification method provided!
         ground_station_requirement()  # reuses the ground station requirement defined earlier
+        vq.depends(req_att)
+        vq.child(req_tx)
 
 
 @satellite.model_compatibility
