@@ -106,6 +106,7 @@ class Requirement(ScopedContext):
     description: str
     decomposed_requirements: list[Requirement] = field(default_factory=list, repr=False)
     verified_by: Verification[...] | None = None
+    depends_on: list[Requirement] = field(default_factory=list, repr=False)
 
     def iter_requirements(self, *, depth: int | None = None) -> Iterable[Requirement]:
         """Iterate over requirements in the current context."""
