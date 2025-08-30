@@ -1,18 +1,21 @@
+import logging
 from typing import Annotated
 
 from pydantic import BaseModel
 
 import veriq as vq
 
+logging.basicConfig(level=logging.DEBUG)
 
-class CommunicationSubsystemModel(BaseModel):
+
+class CommunicationSubsystem(BaseModel):
     """Model for the communication subsystem."""
 
     frequency: float
 
 
 @vq.calculation
-def calculate_bandwidth(model: CommunicationSubsystemModel) -> float:
+def calculate_bandwidth(model: CommunicationSubsystem) -> float:
     """Calculate the bandwidth of the communication subsystem."""
     # Here we would implement the actual calculation logic.
     return model.frequency * 2  # Example calculation
@@ -25,7 +28,7 @@ def verify_telemetry_function(bandwidth: Annotated[float, vq.Depends(calculate_b
     return bandwidth > 1000  # Example condition
 
 
-class GroundStationModel(BaseModel):
+class GroundStation(BaseModel):
     """Model for the ground station."""
 
     location: str
@@ -33,10 +36,23 @@ class GroundStationModel(BaseModel):
 
 
 @vq.verification
-def verify_ground_station(model: GroundStationModel) -> bool:
+def verify_ground_station(model: GroundStation) -> bool:
     """Verify the ground station model."""
     # Here we would implement the actual verification logic.
     return model.antenna_size > 0
+
+
+class AOCS(BaseModel):
+    """Model for the Attitude and Orbit Control System (AOCS)."""
+
+    three_axis_stabilized: bool
+
+
+@vq.verification
+def verify_three_axis_stabilization(model: AOCS) -> bool:
+    """Verify the three-axis stabilization of the AOCS."""
+    # Here we would implement the actual verification logic.
+    return model.three_axis_stabilized
 
 
 def ground_station_requirement() -> vq.Requirement:
@@ -56,20 +72,53 @@ satellite = vq.Scope("Satellite")
 
 with satellite:
     # Requirements definition
-    req_comm = vq.Requirement("The satellite shall communicate with the ground station.")
-    req_att = vq.Requirement("The satellite shall have an three-axis stabilized attitude control system.")
-    req_tx = vq.Requirement("The satellite shall transmit telemetry data.", verified_by=verify_telemetry_function)
-    with req_comm:
-        vq.Requirement(
-            "The satellite shall receive commands from the ground station.",
-        )  # No verification method provided!
-        ground_station_requirement()  # reuses the ground station requirement defined earlier
-        vq.depends(req_att)
-        vq.child(req_tx)
+    req_att = vq.Requirement(
+        "The satellite shall have an three-axis stabilized attitude control system.",
+        verified_by=verify_three_axis_stabilization,
+    )
+    with vq.Scope("Communication"):
+        req_comm = vq.Requirement("The satellite shall communicate with the ground station.")
+        with req_comm:
+            vq.Requirement(
+                "The satellite shall receive commands from the ground station.",
+            )  # No verification method provided!
+            ground_station_requirement()  # reuses the ground station requirement defined earlier
+            vq.depends(req_att)
+            req_tx = vq.Requirement(
+                "The satellite shall transmit telemetry data.",
+                verified_by=verify_telemetry_function,
+            )
 
 
 @satellite.model_compatibility
-def check_models_compatibility(comm_model: CommunicationSubsystemModel, ground_model: GroundStationModel) -> bool:
+def check_models_compatibility(comm_model: CommunicationSubsystem, ground_model: GroundStation) -> bool:
     """Check if the communication subsystem and ground station models are compatible."""
     # Here we would implement the actual compatibility check logic.
     return True
+
+
+if __name__ == "__main__":
+    import tomllib
+    from pathlib import Path
+
+    include_child_scopes = True
+    leaf_only = False
+
+    from rich import print  # noqa: A004
+
+    print(list(satellite.iter_requirements(include_child_scopes=include_child_scopes, leaf_only=leaf_only)))
+    print(list(satellite.iter_verifications(include_child_scopes=include_child_scopes, leaf_only=leaf_only)))
+    print(list(satellite.iter_models(include_child_scopes=include_child_scopes, leaf_only=leaf_only)))
+
+    DesignModel = satellite.design_model(include_child_scopes=include_child_scopes, leaf_only=leaf_only)
+
+    design_file_path = Path(__file__).parent / "satellite.py.design.toml"
+    with design_file_path.open("rb") as f:
+        design_data = DesignModel.model_validate(tomllib.load(f))
+
+    verification_result = satellite.verify_design(
+        design_data,
+        include_child_scopes=include_child_scopes,
+        leaf_only=leaf_only,
+    )
+    print(verification_result)

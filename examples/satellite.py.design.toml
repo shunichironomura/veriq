@@ -1,8 +1,11 @@
 #:schema satellite.py.schema.json
 
-[CommunicationSubsystemModel]
-frequency = 1500.0
+[AOCS]
+three_axis_stabilized = true
 
-[GroundStationModel]
-location = "Cape Canaveral"
-antenna_size = 5.0
+[Communication.CommunicationSubsystem]
+frequency = 2.4e9
+
+[Communication.GroundStation]
+antenna_size = -12
+location = "Tokyo"
