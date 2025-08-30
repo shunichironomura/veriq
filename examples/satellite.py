@@ -104,7 +104,7 @@ if __name__ == "__main__":
     include_child_scopes = True
     leaf_only = False
 
-    from rich import print
+    from rich import print  # noqa: A004
 
     print(list(satellite.iter_requirements(include_child_scopes=include_child_scopes, leaf_only=leaf_only)))
     print(list(satellite.iter_verifications(include_child_scopes=include_child_scopes, leaf_only=leaf_only)))
