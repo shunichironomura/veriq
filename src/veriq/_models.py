@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, get_args
+from typing import TYPE_CHECKING, Any, Self, get_args
 
 from pydantic import BaseModel, create_model
-from scoped_context import ScopedContext, get_current_context
+from scoped_context import NoContextError, ScopedContext, get_current_context
 from typing_extensions import _AnnotatedAlias
 
 from ._utils import model_to_flat_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+
+logger = logging.getLogger(__name__)
 
 
 def get_deps_from_signature(sig: inspect.Signature) -> dict[str, Depends]:
@@ -108,21 +111,28 @@ class Requirement(ScopedContext):
     verified_by: Verification[...] | None = None
     depends_on: list[Requirement] = field(default_factory=list, repr=False)
 
-    def iter_requirements(self, *, depth: int | None = None) -> Iterable[Requirement]:
-        """Iterate over requirements in the current context."""
-        yield self
+    def iter_requirements(self, *, depth: int | None = None, leaf_only: bool = False) -> Iterable[Requirement]:
+        """Iterate over requirements under the current requirement."""
+        if not leaf_only or not self.decomposed_requirements:
+            yield self
         if depth is not None and depth <= 0:
             return
         for req in self.decomposed_requirements:
-            yield from req.iter_requirements(depth=depth - 1 if depth is not None else None)
+            yield from req.iter_requirements(depth=depth - 1 if depth is not None else None, leaf_only=leaf_only)
 
-    def iter_leaf_requirements(self) -> Iterable[Requirement]:
-        """Iterate over leaf requirements in the current context."""
-        if not self.decomposed_requirements:
-            yield self
-        else:
-            for req in self.decomposed_requirements:
-                yield from req.iter_leaf_requirements()
+    def __enter__(self) -> Self:
+        super().__enter__()
+        logger.debug(f"Entering requirement: {self.description}")
+        current_scope = Scope.current()
+        logger.debug(f"Current scope: {current_scope.name}")
+        try:
+            next(iter(req for _, req in current_scope.iter_requirements(include_child_scopes=False) if req == self))
+
+        except StopIteration:
+            msg = f"The entered requirement '{self.description}' doesn't belong to the current scope."
+            raise RuntimeError(msg) from None
+
+        return self
 
 
 @dataclass
@@ -141,57 +151,56 @@ class Scope(ScopedContext):
     child_scopes: list[Scope] = field(default_factory=list)
     model_compatibilities: list[ModelCompatibility[Any, Any]] = field(default_factory=list)
 
+    def __post_init__(self) -> None:
+        try:
+            parent_scope = Scope.current()
+        except NoContextError:
+            pass
+        else:
+            parent_scope.child_scopes.append(self)
+
     def iter_requirements(
         self,
         *,
         depth: int | None = None,
         include_child_scopes: bool = False,
-    ) -> Iterable[Requirement]:
+        leaf_only: bool = False,
+    ) -> Iterable[tuple[tuple[str, ...], Requirement]]:
         """Iterate over requirements in the scope."""
         for req in self.requirements:
-            yield from req.iter_requirements(depth=depth)
+            for req_ in req.iter_requirements(depth=depth, leaf_only=leaf_only):
+                yield (self.name,), req_
         if include_child_scopes:
             for child_scope in self.child_scopes:
-                yield from child_scope.iter_requirements(depth=depth)
-
-    def iter_leaf_requirements(self, *, include_child_scopes: bool = False) -> Iterable[Requirement]:
-        """Iterate over leaf requirements in the scope."""
-        for req in self.requirements:
-            yield from req.iter_leaf_requirements()
-        if include_child_scopes:
-            for child_scope in self.child_scopes:
-                yield from child_scope.iter_leaf_requirements()
+                for path, req in child_scope.iter_requirements(depth=depth, leaf_only=leaf_only):
+                    yield (self.name, *path), req
 
     def iter_verifications(
         self,
         *,
         include_child_scopes: bool = False,
         leaf_only: bool = True,
-    ) -> Iterable[Verification[...]]:
+    ) -> Iterable[tuple[tuple[str, ...], Verification[...]]]:
         """Iterate over verifications in the scope."""
-        iterator = (
-            self.iter_leaf_requirements(include_child_scopes=include_child_scopes)
-            if leaf_only
-            else self.iter_requirements(include_child_scopes=include_child_scopes)
-        )
-        for req in iterator:
+        # TODO: If multiple requirements are verified by the same verification instance,
+        # the verification is now yielded more than once.
+        for path, req in self.iter_requirements(include_child_scopes=include_child_scopes, leaf_only=leaf_only):
             if req.verified_by:
-                yield req.verified_by
-        if include_child_scopes:
-            for child_scope in self.child_scopes:
-                yield from child_scope.iter_verifications(
-                    include_child_scopes=include_child_scopes,
-                    leaf_only=leaf_only,
-                )
+                yield (path, req.verified_by)
 
-    def iter_models(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> Iterable[type[BaseModel]]:
+    def iter_models(
+        self,
+        *,
+        include_child_scopes: bool = False,
+        leaf_only: bool = True,
+    ) -> Iterable[tuple[tuple[str, ...], type[BaseModel]]]:
         """Iterate over models in the scope."""
-        # TODO: Distinguish same model types in different scopes.
-        for verification in self.iter_verifications(
+        for path, verification in self.iter_verifications(
             include_child_scopes=include_child_scopes,
             leaf_only=leaf_only,
         ):
-            yield from verification.iter_all_model_deps()
+            for model in verification.iter_all_model_deps():
+                yield (path, model)
 
     def add_requirement(self, requirement: Requirement) -> None:
         """Add a requirement to the scope."""
@@ -229,12 +238,21 @@ class Scope(ScopedContext):
 
     def design_model(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> type[BaseModel]:
         """Get the design model for the scope."""
+        fields = {
+            model.__name__: model for _, model in self.iter_models(include_child_scopes=False, leaf_only=leaf_only)
+        }
+        if include_child_scopes:
+            fields |= {
+                child_scope.name: child_scope.design_model(
+                    include_child_scopes=include_child_scopes,
+                    leaf_only=leaf_only,
+                )
+                for child_scope in self.child_scopes
+            }
+
         return create_model(  # type: ignore[no-any-return, call-overload]
-            f"{self.name}Design",
-            **{
-                model.__name__: model
-                for model in self.iter_models(include_child_scopes=include_child_scopes, leaf_only=leaf_only)
-            },
+            f"{self.name}",
+            **fields,
         )
 
     def verify_design(
@@ -246,13 +264,24 @@ class Scope(ScopedContext):
     ) -> bool:
         """Verify the design against the scope's requirements."""
         # TODO: Return more detailed verification results.
-        design_dict = design if isinstance(design, dict) else model_to_flat_dict(design)
-        for verification in self.iter_verifications(
-            include_child_scopes=include_child_scopes,
-            leaf_only=leaf_only,
-        ):
+        fields_in_current_scope = {
+            model.__name__ for _, model in self.iter_models(include_child_scopes=False, leaf_only=leaf_only)
+        }
+        design_dict_full = design if isinstance(design, dict) else model_to_flat_dict(design)
+        design_dict = {k: v for k, v in design_dict_full.items() if k in fields_in_current_scope}
+        for _, verification in self.iter_verifications(include_child_scopes=False, leaf_only=leaf_only):
             if not verification.eval(design_dict):
                 return False
+
+        if include_child_scopes:
+            for child_scope in self.child_scopes:
+                if not child_scope.verify_design(
+                    design_dict_full[child_scope.name],
+                    include_child_scopes=include_child_scopes,
+                    leaf_only=leaf_only,
+                ):
+                    return False
+
         return True
 
 

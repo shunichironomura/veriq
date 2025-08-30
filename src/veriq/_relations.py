@@ -17,13 +17,3 @@ def depends(requirement: Requirement) -> None:
         raise
 
     parent.depends_on.append(requirement)
-
-
-def child(requirement: Requirement) -> None:
-    try:
-        parent = Requirement.current()
-    except NoContextError:
-        logger.exception("No active requirement found.")
-        raise
-
-    parent.decomposed_requirements.append(requirement)
