@@ -10,7 +10,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
 
 env:
-  UV_VERSION: "0.8.x"
+  UV_VERSION: "0.9.x"
   UV_FROZEN: "1"
   UV_NO_SYNC: "1"
 
