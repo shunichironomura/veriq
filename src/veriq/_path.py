@@ -74,7 +74,7 @@ class ModelPath:
         return cls(parts=parts)
 
 
-def fetch(root_model: BaseModel, path: str) -> Any:
+def fetch(root_model: Any, path: str) -> Any:
     path_obj = ModelPath.parse(path)
     current: Any = root_model
     for part in path_obj.parts:
