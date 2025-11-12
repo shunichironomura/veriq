@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Self, get_args
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel
 from scoped_context import ScopedContext, get_current_context
 from typing_extensions import _AnnotatedAlias
 
@@ -47,33 +47,35 @@ def get_models_from_signature(
     }
 
 
-@dataclass
+@dataclass(slots=True)
+class Project:
+    """A class to hold the scopes."""
+
+    name: str
+    _scopes: dict[str, Scope] = field(default_factory=dict, repr=False)
+
+    def add_scope(self, scope: Scope) -> None:
+        """Add a scope to the project."""
+        if scope.name in self._scopes:
+            msg = f"Scope with name '{scope.name}' already exists in the project."
+            raise KeyError(msg)
+        self._scopes[scope.name] = scope
+
+
+@dataclass(slots=True)
 class Calculation[T, **P]:
     """A class to represent a calculation in the verification process."""
 
     name: str
     func: Callable[P, T]
     imported_scope_names: list[str] = field(default_factory=list, repr=False)
-    model_deps: dict[str, type[BaseModel]] = field(default_factory=dict, repr=False)
-    calc_deps: dict[str, Depends] = field(default_factory=dict, repr=False)
+    deps: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
         return self.func(*args, **kwargs)
 
-    def iter_all_model_deps(self) -> Iterable[type[BaseModel]]:
-        """Iterate over all model dependencies."""
-        yield from self.model_deps.values()
-        for calc_dep in self.calc_deps.values():
-            yield from calc_dep.calculation.iter_all_model_deps()
 
-    def eval(self, design: dict[str, BaseModel]) -> T:
-        """Evaluate the calculation against a design."""
-        model_args = {name: design[model.__name__] for name, model in self.model_deps.items()}
-        calc_args = {name: calc_dep.calculation.eval(design) for name, calc_dep in self.calc_deps.items()}
-        return self.func(**model_args, **calc_args)  # type: ignore[call-arg,arg-type]
-
-
-@dataclass
+@dataclass(slots=True)
 class Verification[**P]:
     """A class to represent a verification in the verification process."""
 
@@ -86,20 +88,8 @@ class Verification[**P]:
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> bool:
         return self.func(*args, **kwargs)
 
-    def iter_all_model_deps(self) -> Iterable[type[BaseModel]]:
-        """Iterate over all model dependencies."""
-        yield from self.model_deps.values()
-        for calc_dep in self.calc_deps.values():
-            yield from calc_dep.calculation.iter_all_model_deps()
 
-    def eval(self, design: dict[str, BaseModel]) -> bool:
-        """Evaluate the verification against a design."""
-        model_args = {name: design[model.__name__] for name, model in self.model_deps.items()}
-        calc_args = {name: calc_dep.calculation.eval(design) for name, calc_dep in self.calc_deps.items()}
-        return self.func(**model_args, **calc_args)  # type: ignore[call-arg,arg-type]
-
-
-@dataclass
+@dataclass(slots=True)
 class Requirement(ScopedContext):
     def __post_init__(self) -> None:
         current_scope_or_requirement = get_current_context((Scope, Requirement))
@@ -108,9 +98,10 @@ class Requirement(ScopedContext):
         elif isinstance(current_scope_or_requirement, Requirement):
             current_scope_or_requirement.decomposed_requirements.append(self)
 
+    id: str
     description: str
     decomposed_requirements: list[Requirement] = field(default_factory=list, repr=False)
-    verified_by: Verification[...] | None = None
+    verified_by: Verification | None = None
     depends_on: list[Requirement] = field(default_factory=list, repr=False)
 
     def iter_requirements(self, *, depth: int | None = None, leaf_only: bool = False) -> Iterable[Requirement]:
@@ -122,31 +113,8 @@ class Requirement(ScopedContext):
         for req in self.decomposed_requirements:
             yield from req.iter_requirements(depth=depth - 1 if depth is not None else None, leaf_only=leaf_only)
 
-    def __enter__(self) -> Self:
-        super().__enter__()
-        logger.debug(f"Entering requirement: {self.description}")
-        current_scope = Scope.current()
-        logger.debug(f"Current scope: {current_scope.name}")
-        try:
-            next(iter(req for _, req in current_scope.iter_requirements(include_child_scopes=False) if req == self))
 
-        except StopIteration:
-            msg = f"The entered requirement '{self.description}' doesn't belong to the current scope."
-            raise RuntimeError(msg) from None
-
-        return self
-
-
-@dataclass
-class ModelCompatibility[MA: BaseModel, MB: BaseModel]:
-    """A class to represent model compatibility in the verification process."""
-
-    model_a: type[MA]
-    model_b: type[MB]
-    func: Callable[[MA, MB], bool] = field(repr=False)
-
-
-@dataclass
+@dataclass(slots=True)
 class Scope(ScopedContext):
     name: str
     _subscopes: list[Scope] = field(default_factory=list)
@@ -184,8 +152,9 @@ class Scope(ScopedContext):
             verification = Verification(
                 name=func.__name__,
                 func=func,
-                model_deps=model_deps,
-                calc_deps=calc_deps,
+                deps={},
+                # model_deps=model_deps,
+                # calc_deps=calc_deps,
                 imported_scope_names=list(imports),
             )
             self._verifications.append(verification)
@@ -198,7 +167,6 @@ class Scope(ScopedContext):
 
         def decorator(func: Callable) -> Calculation:
             sig = inspect.signature(func)
-            model_deps = get_models_from_signature(sig)
             calc_deps = get_deps_from_signature(sig)
             if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
                 msg = "Function must have a valid name."

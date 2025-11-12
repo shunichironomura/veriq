@@ -2,6 +2,7 @@
 
 __all__ = [
     "Depends",
+    "Project",
     "Requirement",
     "Scope",
     "Table",
@@ -10,6 +11,6 @@ __all__ = [
 ]
 
 from ._decorators import assume
-from ._models import Depends, Requirement, Scope
+from ._models import Depends, Project, Requirement, Scope
 from ._relations import depends
 from ._table import Table
