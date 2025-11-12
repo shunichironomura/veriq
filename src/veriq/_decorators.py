@@ -1,18 +1,21 @@
-import inspect
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from ._models import Calculation, Verification, get_deps_from_signature, get_models_from_signature
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-
-def calculation[T, **P](func: Callable[P, T]) -> Calculation[T, P]:
-    """Decorate a function to mark it as a calculation."""
-    calc_deps = get_deps_from_signature(inspect.signature(func))
-    model_deps = get_models_from_signature(inspect.signature(func))
-    return Calculation(name=func.__name__, func=func, model_deps=model_deps, calc_deps=calc_deps)
+    from ._models import Verification
 
 
-def verification[**P](func: Callable[P, bool]) -> Verification[P]:
-    """Decorate a function to mark it as a verification."""
-    model_deps = get_models_from_signature(inspect.signature(func))
-    calc_deps = get_deps_from_signature(inspect.signature(func))
-    return Verification(name=func.__name__, func=func, model_deps=model_deps, calc_deps=calc_deps)
+def assume[T, **P](verification: Verification) -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """Decorator to mark that a calculation assumes a verification."""
+
+    def decorator(func: Callable[P, T]) -> Callable[P, T]:
+        # HACK: We should avoid modifying the function object directly,
+        # but this is a simple way to attach metadata.
+        # In the future, we might implement a builder class for calculations/verifications.
+        if not hasattr(func, "__veriq_assumed_verifications__"):
+            func.__veriq_assumed_verifications__ = []
+        func.__veriq_assumed_verifications__.append(verification)
+        return func
+
+    return decorator
