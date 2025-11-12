@@ -229,84 +229,9 @@ class Scope(ScopedContext):
         msg = f"Requirement with ID '{_id}' not found in scope '{self.name}'."
         raise KeyError(msg)
 
-    def iter_requirements(
-        self,
-        *,
-        depth: int | None = None,
-        include_child_scopes: bool = False,
-        leaf_only: bool = False,
-    ) -> Iterable[tuple[tuple[str, ...], Requirement]]:
-        """Iterate over requirements in the scope."""
-        for req in self._requirements:
-            for req_ in req.iter_requirements(depth=depth, leaf_only=leaf_only):
-                yield (self.name,), req_
-        if include_child_scopes:
-            for child_scope in self._subscopes:
-                for path, req in child_scope.iter_requirements(depth=depth, leaf_only=leaf_only):
-                    yield (self.name, *path), req
-
-    def iter_verifications(
-        self,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> Iterable[tuple[tuple[str, ...], Verification[...]]]:
-        """Iterate over verifications in the scope."""
-        # TODO: If multiple requirements are verified by the same verification instance,
-        # the verification is now yielded more than once.
-        for path, req in self.iter_requirements(include_child_scopes=include_child_scopes, leaf_only=leaf_only):
-            if req.verified_by:
-                yield (path, req.verified_by)
-
-    def iter_models(
-        self,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> Iterable[tuple[tuple[str, ...], type[BaseModel]]]:
-        """Iterate over models in the scope."""
-        for path, verification in self.iter_verifications(
-            include_child_scopes=include_child_scopes,
-            leaf_only=leaf_only,
-        ):
-            for model in verification.iter_all_model_deps():
-                yield (path, model)
-
     def add_requirement(self, requirement: Requirement) -> None:
         """Add a requirement to the scope."""
         self._requirements.append(requirement)
-
-    def design_json_schema(
-        self,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> dict[str, Any]:
-        """Get the schema of models in the scope."""
-        design_model = self.design_model(
-            include_child_scopes=include_child_scopes,
-            leaf_only=leaf_only,
-        )
-        return design_model.model_json_schema()
-
-    def design_model(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> type[BaseModel]:
-        """Get the design model for the scope."""
-        fields = {
-            model.__name__: model for _, model in self.iter_models(include_child_scopes=False, leaf_only=leaf_only)
-        }
-        if include_child_scopes:
-            fields |= {
-                child_scope.name: child_scope.design_model(
-                    include_child_scopes=include_child_scopes,
-                    leaf_only=leaf_only,
-                )
-                for child_scope in self._subscopes
-            }
-
-        return create_model(  # type: ignore[no-any-return, call-overload]
-            f"{self.name}",
-            **fields,
-        )
 
     def verify_design(
         self,
