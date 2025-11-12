@@ -84,6 +84,7 @@ class Calculation[T, **P]:
     func: Callable[P, T]
     deps: dict[str, Fetch | Calc] = field(default_factory=dict, repr=False)
     imported_scope_names: list[str] = field(default_factory=list, repr=False)
+    assumed_verifications: list[Verification] = field(default_factory=list, repr=False)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
         return self.func(*args, **kwargs)
@@ -97,6 +98,7 @@ class Verification[**P]:
     func: Callable[P, bool] = field(repr=False)  # TODO: disallow positional-only arguments
     deps: dict[str, Fetch | Calc] = field(default_factory=dict, repr=False)
     imported_scope_names: list[str] = field(default_factory=list, repr=False)
+    assumed_verifications: list[Verification] = field(default_factory=list, repr=False)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> bool:
         return self.func(*args, **kwargs)
@@ -172,11 +174,16 @@ class Scope:
                     )
                     raise ValueError(msg)
 
+            assumed_verifications: list[Verification] = []
+            if hasattr(func, "__veriq_assumed_verifications__"):
+                assumed_verifications = func.__veriq_assumed_verifications__
+
             verification = Verification(
                 name=verification_name,
                 func=func,
                 deps=deps,
                 imported_scope_names=list(imports),
+                assumed_verifications=assumed_verifications,
             )
             if verification_name in self._verifications:
                 msg = f"Verification with name '{verification_name}' already exists in scope '{self.name}'."
@@ -210,11 +217,16 @@ class Scope:
                     )
                     raise ValueError(msg)
 
+            assumed_verifications: list[Verification] = []
+            if hasattr(func, "__veriq_assumed_verifications__"):
+                assumed_verifications = func.__veriq_assumed_verifications__
+
             calculation = Calculation(
                 name=calculation_name,
                 func=func,
                 deps=deps,
                 imported_scope_names=list(imports),
+                assumed_verifications=assumed_verifications,
             )
             if calculation_name in self._calculations:
                 msg = f"Calculation with name '{calculation_name}' already exists in scope '{self.name}'."
