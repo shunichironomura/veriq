@@ -6,11 +6,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, get_args
 
 from pydantic import BaseModel
-from scoped_context import ScopedContext, get_current_context
+from scoped_context import NoContextError, ScopedContext
 from typing_extensions import _AnnotatedAlias
 
 from ._path import ModelPath
-from ._utils import model_to_flat_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -106,11 +105,12 @@ class Verification[**P]:
 @dataclass(slots=True)
 class Requirement(ScopedContext):
     def __post_init__(self) -> None:
-        current_scope_or_requirement = get_current_context((Scope, Requirement))
-        if isinstance(current_scope_or_requirement, Scope):
-            current_scope_or_requirement.add_requirement(self)
-        elif isinstance(current_scope_or_requirement, Requirement):
-            current_scope_or_requirement.decomposed_requirements.append(self)
+        try:
+            current_requirement = Requirement.current()
+        except NoContextError:
+            current_requirement = None
+        else:
+            current_requirement.decomposed_requirements.append(self)
 
     id: str
     description: str
@@ -129,7 +129,7 @@ class Requirement(ScopedContext):
 
 
 @dataclass(slots=True)
-class Scope(ScopedContext):
+class Scope:
     name: str
     _root_model: type[BaseModel] | None = None
     _requirements: dict[str, Requirement] = field(default_factory=dict)
@@ -152,8 +152,6 @@ class Scope(ScopedContext):
         """Decorator to mark a function as a verification in the scope."""
 
         def decorator(func: Callable) -> Verification:
-            sig = inspect.signature(func)
-            deps = _get_deps_from_signature(sig)
             if name is None:
                 if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
                     msg = "Function must have a valid name."
@@ -161,6 +159,19 @@ class Scope(ScopedContext):
                 verification_name = func.__name__
             else:
                 verification_name = name
+
+            sig = inspect.signature(func)
+            deps = _get_deps_from_signature(sig)
+            for dep_name, dep in deps.items():
+                if dep.scope is None:
+                    dep.scope = self.name
+                if dep.scope != self.name and dep.scope not in imports:
+                    msg = (
+                        f"Dependency '{dep_name}' is from scope '{dep.scope}',"
+                        f" which is not imported in verification '{verification_name}'."
+                    )
+                    raise ValueError(msg)
+
             verification = Verification(
                 name=verification_name,
                 func=func,
@@ -179,8 +190,6 @@ class Scope(ScopedContext):
         """Decorator to mark a function as a calculation in the scope."""
 
         def decorator(func: Callable) -> Calculation:
-            sig = inspect.signature(func)
-            deps = _get_deps_from_signature(sig)
             if name is None:
                 if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
                     msg = "Function must have a valid name."
@@ -188,6 +197,19 @@ class Scope(ScopedContext):
                 calculation_name = func.__name__
             else:
                 calculation_name = name
+
+            sig = inspect.signature(func)
+            deps = _get_deps_from_signature(sig)
+            for dep_name, dep in deps.items():
+                if dep.scope is None:
+                    dep.scope = self.name
+                if dep.scope != self.name and dep.scope not in imports:
+                    msg = (
+                        f"Dependency '{dep_name}' is from scope '{dep.scope}',"
+                        f" which is not imported in calculation '{calculation_name}'."
+                    )
+                    raise ValueError(msg)
+
             calculation = Calculation(
                 name=calculation_name,
                 func=func,
@@ -205,7 +227,10 @@ class Scope(ScopedContext):
     def requirement(self, id_: str, /, description: str, verified_by: Iterable[Verification] = ()) -> Requirement:
         """Create and add a requirement to the scope."""
         requirement = Requirement(description=description, verified_by=list(verified_by), id=id_)
-        self.add_requirement(requirement)
+        if id_ in self._requirements:
+            msg = f"Requirement with ID '{id_}' already exists in scope '{self.name}'."
+            raise KeyError(msg)
+        self._requirements[id_] = requirement
         return requirement
 
     def fetch_requirement(self, id_: str, /) -> Requirement:
@@ -215,39 +240,3 @@ class Scope(ScopedContext):
         except KeyError as e:
             msg = f"Requirement with ID '{id_}' not found in scope '{self.name}'."
             raise KeyError(msg) from e
-
-    def add_requirement(self, requirement: Requirement) -> None:
-        """Add an existing requirement to the scope."""
-        if requirement.id in self._requirements:
-            msg = f"Requirement with ID '{requirement.id}' already exists in scope '{self.name}'."
-            raise KeyError(msg)
-        self._requirements[requirement.id] = requirement
-
-    def verify_design(
-        self,
-        design: dict[str, BaseModel] | BaseModel,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> bool:
-        """Verify the design against the scope's requirements."""
-        # TODO: Return more detailed verification results.
-        fields_in_current_scope = {
-            model.__name__ for _, model in self.iter_models(include_child_scopes=False, leaf_only=leaf_only)
-        }
-        design_dict_full = design if isinstance(design, dict) else model_to_flat_dict(design)
-        design_dict = {k: v for k, v in design_dict_full.items() if k in fields_in_current_scope}
-        for _, verification in self.iter_verifications(include_child_scopes=False, leaf_only=leaf_only):
-            if not verification.eval(design_dict):
-                return False
-
-        if include_child_scopes:
-            for child_scope in self._subscopes:
-                if not child_scope.verify_design(
-                    design_dict_full[child_scope.name],
-                    include_child_scopes=include_child_scopes,
-                    leaf_only=leaf_only,
-                ):
-                    return False
-
-        return True
