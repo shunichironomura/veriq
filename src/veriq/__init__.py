@@ -4,11 +4,12 @@ __all__ = [
     "Depends",
     "Requirement",
     "Scope",
-    "calculation",
+    "Table",
+    "assume",
     "depends",
-    "verification",
 ]
 
-from ._decorators import calculation, verification
+from ._decorators import assume
 from ._models import Depends, Requirement, Scope
 from ._relations import depends
+from ._table import Table
