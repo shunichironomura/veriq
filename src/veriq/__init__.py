@@ -1,7 +1,9 @@
 """Requirements verification tool."""
 
 __all__ = [
+    "Calc",
     "Depends",
+    "Fetch",
     "Project",
     "Requirement",
     "Scope",
@@ -11,6 +13,6 @@ __all__ = [
 ]
 
 from ._decorators import assume
-from ._models import Depends, Project, Requirement, Scope
+from ._models import Calc, Depends, Fetch, Project, Requirement, Scope
 from ._relations import depends
 from ._table import Table
