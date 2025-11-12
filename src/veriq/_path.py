@@ -42,8 +42,7 @@ class ModelPath:
     def parse(cls, path_str: str) -> Self:
         s = path_str.strip()
         if not s.startswith("$"):
-            msg = "Path must start with '$'"
-            raise ValueError(msg)
+            s = "$." + s  # Prepend '$.' if missing
 
         parts: list[PartBase] = []
         i = 1  # Skip the initial '$'
