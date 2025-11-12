@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Self, get_args
 
 from pydantic import BaseModel, create_model
-from scoped_context import NoContextError, ScopedContext, get_current_context
+from scoped_context import ScopedContext, get_current_context
 from typing_extensions import _AnnotatedAlias
 
 from ._utils import model_to_flat_dict
@@ -53,6 +53,7 @@ class Calculation[T, **P]:
 
     name: str
     func: Callable[P, T]
+    imported_scope_names: list[str] = field(default_factory=list, repr=False)
     model_deps: dict[str, type[BaseModel]] = field(default_factory=dict, repr=False)
     calc_deps: dict[str, Depends] = field(default_factory=dict, repr=False)
 
@@ -80,6 +81,7 @@ class Verification[**P]:
     func: Callable[P, bool] = field(repr=False)  # TODO: disallow positional-only arguments
     model_deps: dict[str, type[BaseModel]] = field(default_factory=dict, repr=False)
     calc_deps: dict[str, Depends] = field(default_factory=dict, repr=False)
+    imported_scope_names: list[str] = field(default_factory=list, repr=False)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> bool:
         return self.func(*args, **kwargs)
@@ -147,17 +149,85 @@ class ModelCompatibility[MA: BaseModel, MB: BaseModel]:
 @dataclass
 class Scope(ScopedContext):
     name: str
-    requirements: list[Requirement] = field(default_factory=list)
-    child_scopes: list[Scope] = field(default_factory=list)
-    model_compatibilities: list[ModelCompatibility[Any, Any]] = field(default_factory=list)
+    _subscopes: list[Scope] = field(default_factory=list)
+    _root_model: type[BaseModel] | None = None
+    _requirements: list[Requirement] = field(default_factory=list)
+    _verifications: list[Verification] = field(default_factory=list)
+    _calculations: list[Calculation] = field(default_factory=list)
 
-    def __post_init__(self) -> None:
-        try:
-            parent_scope = Scope.current()
-        except NoContextError:
-            pass
-        else:
-            parent_scope.child_scopes.append(self)
+    def add_subscope(self, scope: Scope) -> None:
+        """Add a subscope to the current scope."""
+        self._subscopes.append(scope)
+
+    def root_model[M: type[BaseModel]](self) -> Callable[[M], M]:
+        """Decorator to mark a model as the root model of the scope."""
+
+        def decorator(model: M) -> M:
+            if self._root_model is not None:
+                msg = f"Scope '{self.name}' already has a root model assigned: {self._root_model.__name__}"
+                raise RuntimeError(msg)
+            self._root_model = model
+            return model
+
+        return decorator
+
+    def verification(self, imports: Iterable[str] = ()) -> Callable[[Callable], Verification]:
+        """Decorator to mark a function as a verification in the scope."""
+
+        def decorator(func: Callable) -> Verification:
+            sig = inspect.signature(func)
+            model_deps = get_models_from_signature(sig)
+            calc_deps = get_deps_from_signature(sig)
+            if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
+                msg = "Function must have a valid name."
+                raise TypeError(msg)
+            verification = Verification(
+                name=func.__name__,
+                func=func,
+                model_deps=model_deps,
+                calc_deps=calc_deps,
+                imported_scope_names=list(imports),
+            )
+            self._verifications.append(verification)
+            return verification
+
+        return decorator
+
+    def calculation(self, imports: Iterable[str] = ()) -> Callable[[Callable], Calculation]:
+        """Decorator to mark a function as a calculation in the scope."""
+
+        def decorator(func: Callable) -> Calculation:
+            sig = inspect.signature(func)
+            model_deps = get_models_from_signature(sig)
+            calc_deps = get_deps_from_signature(sig)
+            if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
+                msg = "Function must have a valid name."
+                raise TypeError(msg)
+            calculation = Calculation(
+                name=func.__name__,
+                func=func,
+                model_deps=model_deps,
+                calc_deps=calc_deps,
+                imported_scope_names=list(imports),
+            )
+            self._calculations.append(calculation)
+            return calculation
+
+        return decorator
+
+    def requirement(self, id: str, description: str, verified_by: Iterable[Verification] = ()) -> Requirement:
+        """Create and add a requirement to the scope."""
+        requirement = Requirement(description=description, verified_by=next(iter(verified_by), None))
+        self._requirements.append(requirement)
+        return requirement
+
+    def fetch_requirement(self, /, _id: str) -> Requirement:
+        """Fetch a requirement by its ID."""
+        for req in self._requirements:
+            if req.description == _id:
+                return req
+        msg = f"Requirement with ID '{_id}' not found in scope '{self.name}'."
+        raise KeyError(msg)
 
     def iter_requirements(
         self,
@@ -167,11 +237,11 @@ class Scope(ScopedContext):
         leaf_only: bool = False,
     ) -> Iterable[tuple[tuple[str, ...], Requirement]]:
         """Iterate over requirements in the scope."""
-        for req in self.requirements:
+        for req in self._requirements:
             for req_ in req.iter_requirements(depth=depth, leaf_only=leaf_only):
                 yield (self.name,), req_
         if include_child_scopes:
-            for child_scope in self.child_scopes:
+            for child_scope in self._subscopes:
                 for path, req in child_scope.iter_requirements(depth=depth, leaf_only=leaf_only):
                     yield (self.name, *path), req
 
@@ -204,24 +274,7 @@ class Scope(ScopedContext):
 
     def add_requirement(self, requirement: Requirement) -> None:
         """Add a requirement to the scope."""
-        self.requirements.append(requirement)
-
-    def model_compatibility[MA: BaseModel, MB: BaseModel](
-        self,
-        func: Callable[[MA, MB], bool],
-        /,
-    ) -> Callable[[MA, MB], bool]:
-        """Decorator to mark a function as a model compatibility check."""
-        sig = inspect.signature(func)
-        model_a, model_b = tuple(
-            param.annotation
-            for param in sig.parameters.values()
-            if isinstance(param.annotation, type) and issubclass(param.annotation, BaseModel)
-        )
-
-        compatibility = ModelCompatibility(model_a=model_a, model_b=model_b, func=func)  # type: ignore[arg-type]
-        self.model_compatibilities.append(compatibility)
-        return func
+        self._requirements.append(requirement)
 
     def design_json_schema(
         self,
@@ -247,7 +300,7 @@ class Scope(ScopedContext):
                     include_child_scopes=include_child_scopes,
                     leaf_only=leaf_only,
                 )
-                for child_scope in self.child_scopes
+                for child_scope in self._subscopes
             }
 
         return create_model(  # type: ignore[no-any-return, call-overload]
@@ -274,7 +327,7 @@ class Scope(ScopedContext):
                 return False
 
         if include_child_scopes:
-            for child_scope in self.child_scopes:
+            for child_scope in self._subscopes:
                 if not child_scope.verify_design(
                     design_dict_full[child_scope.name],
                     include_child_scopes=include_child_scopes,
