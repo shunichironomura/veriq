@@ -11,8 +11,8 @@ __all__ = [
     "depends",
 ]
 
+from ._build import build_dependencies_graph
 from ._decorators import assume
-from ._exec import build_dependencies_graph
 from ._models import Project, Ref, Requirement, Scope
 from ._relations import depends
 from ._table import Table

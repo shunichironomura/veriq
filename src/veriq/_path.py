@@ -109,6 +109,10 @@ class CalcPath(Path):
             msg = f"CalcPath root must start with '{self.PREFIX}'. Got: {self.root}"
             raise ValueError(msg)
 
+    @property
+    def calc_name(self) -> str:
+        return self.root[len(self.PREFIX) :]
+
 
 @dataclass(slots=True, frozen=True)
 class VerificationPath(Path):
@@ -124,6 +128,10 @@ class VerificationPath(Path):
         if self.parts:
             msg = "VerificationPath must not have parts."
             raise ValueError(msg)
+
+    @property
+    def verification_name(self) -> str:
+        return self.root[len(self.PREFIX) :]
 
 
 def parse_path(path_str: str) -> ModelPath | CalcPath | VerificationPath:

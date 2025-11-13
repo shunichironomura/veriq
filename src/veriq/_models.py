@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from annotationlib import ForwardRef
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, get_args
 
@@ -9,7 +10,7 @@ from pydantic import BaseModel
 from scoped_context import NoContextError, ScopedContext
 from typing_extensions import _AnnotatedAlias
 
-from ._path import ProjectPath, parse_path
+from ._path import AttributePart, CalcPath, ItemPart, ModelPath, ProjectPath, VerificationPath, parse_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -55,7 +56,7 @@ class Project:
     """A class to hold the scopes."""
 
     name: str
-    _scopes: dict[str, Scope] = field(default_factory=dict, repr=False)
+    _scopes: dict[str, Scope] = field(default_factory=dict)
 
     def add_scope(self, scope: Scope) -> None:
         """Add a scope to the project."""
@@ -68,6 +69,58 @@ class Project:
     def scopes(self) -> dict[str, Scope]:
         """Get all scopes in the project."""
         return self._scopes
+
+    def get_type(self, ppath: ProjectPath) -> type:
+        """Get the type of the given project path."""
+        scope = self._scopes.get(ppath.scope)
+        if scope is None:
+            msg = f"Scope '{ppath.scope}' not found in project '{self.name}'."
+            raise KeyError(msg)
+
+        if isinstance(ppath.path, ModelPath):
+            if scope._root_model is None:
+                msg = f"Scope '{scope.name}' does not have a root model defined."
+                raise RuntimeError(msg)
+            current_type: type = scope._root_model
+            for part in ppath.path.parts:
+                if isinstance(current_type, ForwardRef):
+                    current_type = current_type.evaluate()
+                match part:
+                    case AttributePart(name):
+                        try:
+                            field_info = current_type.model_fields[name]
+                        except KeyError as e:
+                            msg = f"Attribute '{name}' not found in model '{current_type.__name__}'."
+                            raise KeyError(msg) from e
+                        current_type = field_info.annotation
+                    case ItemPart(key):
+                        args = get_args(current_type)
+                        if len(args) != 2:
+                            msg = f"Type '{current_type}' is not subscriptable with key '{key}'."
+                            raise TypeError(msg)
+                        current_type = args[1]  # type: ignore[assignment]
+                    case _:
+                        msg = f"Unknown part type: {type(part)}"
+                        raise TypeError(msg)
+
+            if isinstance(current_type, ForwardRef):
+                current_type = current_type.evaluate()
+
+            return current_type
+
+        if isinstance(ppath.path, CalcPath):
+            calc_name = ppath.path.root.lstrip(ppath.path.PREFIX)
+            calculation = scope.calculations.get(calc_name)
+            if calculation is None:
+                msg = f"Calculation '{calc_name}' not found in scope '{scope.name}'."
+                raise KeyError(msg)
+            return calculation.output_type
+
+        if isinstance(ppath.path, VerificationPath):
+            return bool
+
+        msg = f"Unsupported path type: {ppath.path.__class__.__name__}"
+        raise TypeError(msg)
 
 
 @dataclass(slots=True)
@@ -84,25 +137,26 @@ class Calculation[T, **P]:
 
     name: str
     func: Callable[P, T] = field(repr=False)
-    imported_scope_names: list[str] = field(default_factory=list, repr=False)
-    assumed_verifications: list[Verification] = field(default_factory=list, repr=False)
+    default_scope_name: str = field()
+    imported_scope_names: list[str] = field(default_factory=list)
+    assumed_verifications: list[Verification] = field(default_factory=list)
 
     # Fields initialized in __post_init__
-    dep_ppaths: dict[str, ProjectPath] = field(init=False, repr=False)
-    output_type: type[T] = field(init=False, repr=False)
+    dep_ppaths: dict[str, ProjectPath] = field(init=False)
+    output_type: type[T] = field(init=False)
 
     def __post_init__(self) -> None:
         sig = inspect.signature(self.func)
         dep_refs = _get_dep_refs_from_signature(sig)
 
         def ref_to_project_path(ref: Ref) -> ProjectPath:
-            scope_name = self.name if ref.scope is None else ref.scope
+            scope_name = self.default_scope_name if ref.scope is None else ref.scope
             return ProjectPath(scope=scope_name, path=parse_path(ref.path))
 
         for dep_name, dep_ref in dep_refs.items():
             if dep_ref.scope is None:
-                dep_ref.scope = self.name
-            if dep_ref.scope != self.name and dep_ref.scope not in self.imported_scope_names:
+                dep_ref.scope = self.default_scope_name
+            if dep_ref.scope != self.default_scope_name and dep_ref.scope not in self.imported_scope_names:
                 msg = (
                     f"Dependency '{dep_name}' is from scope '{dep_ref.scope}',"
                     f" which is not imported in calculation '{self.name}'."
@@ -121,24 +175,25 @@ class Verification[**P]:
 
     name: str
     func: Callable[P, bool] = field(repr=False)  # TODO: disallow positional-only arguments
-    imported_scope_names: list[str] = field(default_factory=list, repr=False)
-    assumed_verifications: list[Verification] = field(default_factory=list, repr=False)
+    default_scope_name: str = field()
+    imported_scope_names: list[str] = field(default_factory=list)
+    assumed_verifications: list[Verification] = field(default_factory=list)
 
     # Fields initialized in __post_init__
-    dep_ppaths: dict[str, ProjectPath] = field(init=False, repr=False)
+    dep_ppaths: dict[str, ProjectPath] = field(init=False)
 
     def __post_init__(self) -> None:
         sig = inspect.signature(self.func)
         dep_refs = _get_dep_refs_from_signature(sig)
 
         def ref_to_project_path(ref: Ref) -> ProjectPath:
-            scope_name = self.name if ref.scope is None else ref.scope
+            scope_name = self.default_scope_name if ref.scope is None else ref.scope
             return ProjectPath(scope=scope_name, path=parse_path(ref.path))
 
         for dep_name, dep_ref in dep_refs.items():
             if dep_ref.scope is None:
-                dep_ref.scope = self.name
-            if dep_ref.scope != self.name and dep_ref.scope not in self.imported_scope_names:
+                dep_ref.scope = self.default_scope_name
+            if dep_ref.scope != self.default_scope_name and dep_ref.scope not in self.imported_scope_names:
                 msg = (
                     f"Dependency '{dep_name}' is from scope '{dep_ref.scope}',"
                     f" which is not imported in verification '{self.name}'."
@@ -179,10 +234,10 @@ class Requirement(ScopedContext):
 @dataclass(slots=True)
 class Scope:
     name: str
-    _root_model: type[BaseModel] | None = field(default=None, repr=False)
-    _requirements: dict[str, Requirement] = field(default_factory=dict, repr=False)
-    _verifications: dict[str, Verification] = field(default_factory=dict, repr=False)
-    _calculations: dict[str, Calculation] = field(default_factory=dict, repr=False)
+    _root_model: type[BaseModel] | None = field(default=None)
+    _requirements: dict[str, Requirement] = field(default_factory=dict)
+    _verifications: dict[str, Verification] = field(default_factory=dict)
+    _calculations: dict[str, Calculation] = field(default_factory=dict)
 
     @property
     def requirements(self) -> dict[str, Requirement]:
@@ -232,6 +287,7 @@ class Scope:
                 func=func,
                 imported_scope_names=list(imports),
                 assumed_verifications=assumed_verifications,
+                default_scope_name=self.name,
             )
             if verification_name in self._verifications:
                 msg = f"Verification with name '{verification_name}' already exists in scope '{self.name}'."
@@ -262,6 +318,7 @@ class Scope:
                 func=func,
                 imported_scope_names=list(imports),
                 assumed_verifications=assumed_verifications,
+                default_scope_name=self.name,
             )
             if calculation_name in self._calculations:
                 msg = f"Calculation with name '{calculation_name}' already exists in scope '{self.name}'."
