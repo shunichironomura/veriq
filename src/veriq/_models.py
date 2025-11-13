@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from scoped_context import NoContextError, ScopedContext
 from typing_extensions import _AnnotatedAlias
 
-from ._path import CalcPath, ModelPath, ProjectPath, VerificationPath
+from ._path import CalcPath, ModelPath, ProjectPath, VerificationPath, parse_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -89,7 +89,7 @@ class Calculation[T, **P]:
     assumed_verifications: list[Verification] = field(default_factory=list, repr=False)
 
     # Fields initialized in __post_init__
-    deps: dict[str, ProjectPath] = field(init=False, repr=False)
+    dep_ppaths: dict[str, ProjectPath] = field(init=False, repr=False)
     output_type: type[T] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -98,7 +98,7 @@ class Calculation[T, **P]:
 
         def ref_to_project_path(ref: Ref) -> ProjectPath:
             scope_name = self.name if ref.scope is None else ref.scope
-            return ProjectPath(scope=scope_name, path=CalcPath.parse(ref.path))
+            return ProjectPath(scope=scope_name, path=parse_path(ref.path))
 
         for dep_name, dep_ref in dep_refs.items():
             if dep_ref.scope is None:
@@ -109,7 +109,7 @@ class Calculation[T, **P]:
                     f" which is not imported in calculation '{self.name}'."
                 )
                 raise ValueError(msg)
-        self.deps = {name: ref_to_project_path(ref) for name, ref in dep_refs.items()}
+        self.dep_ppaths = {name: ref_to_project_path(ref) for name, ref in dep_refs.items()}
         self.output_type = _get_return_type_from_signature(sig)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
@@ -126,7 +126,7 @@ class Verification[**P]:
     assumed_verifications: list[Verification] = field(default_factory=list, repr=False)
 
     # Fields initialized in __post_init__
-    dep_paths: dict[str, ProjectPath] = field(init=False, repr=False)
+    dep_ppaths: dict[str, ProjectPath] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         sig = inspect.signature(self.func)
@@ -134,7 +134,7 @@ class Verification[**P]:
 
         def ref_to_project_path(ref: Ref) -> ProjectPath:
             scope_name = self.name if ref.scope is None else ref.scope
-            return ProjectPath(scope=scope_name, path=VerificationPath.parse(ref.path))
+            return ProjectPath(scope=scope_name, path=parse_path(ref.path))
 
         for dep_name, dep_ref in dep_refs.items():
             if dep_ref.scope is None:
@@ -145,7 +145,7 @@ class Verification[**P]:
                     f" which is not imported in verification '{self.name}'."
                 )
                 raise ValueError(msg)
-        self.dep_paths = {name: ref_to_project_path(ref) for name, ref in dep_refs.items()}
+        self.dep_ppaths = {name: ref_to_project_path(ref) for name, ref in dep_refs.items()}
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> bool:
         return self.func(*args, **kwargs)
