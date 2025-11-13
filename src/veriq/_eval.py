@@ -6,7 +6,15 @@ from pydantic import BaseModel
 
 from ._build import build_dependencies_graph
 from ._models import Project
-from ._path import CalcPath, ModelPath, ProjectPath, VerificationPath, get_value_by_parts, iter_leaf_path_parts
+from ._path import (
+    CalcPath,
+    ModelPath,
+    ProjectPath,
+    VerificationPath,
+    get_value_by_parts,
+    hydrate_value_by_leaf_values,
+    iter_leaf_path_parts,
+)
 from ._utils import topological_sort
 
 logger = logging.getLogger(__name__)
@@ -44,22 +52,57 @@ def evaluate_project(project: Project, model_data: Mapping[str, BaseModel]) -> d
         if isinstance(ppath.path, CalcPath):
             calc_scope = project.scopes[ppath.scope]
             calc = calc_scope.calculations[ppath.path.calc_name]
-            # FIXME: We should reconstruct the Pydantic model for input values here.
-            input_values = {dep_name: predecessor_values[dep_ppath] for dep_name, dep_ppath in calc.dep_ppaths.items()}
+            input_values: dict[str, Any] = {}
+            for dep_name, dep_ppath in calc.dep_ppaths.items():
+                logger.debug(f"  Hydrating input '{dep_name}' from {dep_ppath}")
+                input_values[dep_name] = hydrate_value_by_leaf_values(
+                    project.get_type(dep_ppath),
+                    {
+                        leaf_parts: predecessor_values[
+                            ProjectPath(
+                                scope=dep_ppath.scope,
+                                path=CalcPath(root=dep_ppath.path.root, parts=dep_ppath.path.parts + leaf_parts)
+                                if isinstance(dep_ppath.path, CalcPath)
+                                else ModelPath(root="$", parts=dep_ppath.path.parts + leaf_parts),
+                            )
+                        ]
+                        for leaf_parts in iter_leaf_path_parts(project.get_type(dep_ppath))
+                    },
+                )
+            logger.debug(f"  Calling calculation {calc.name} with inputs: {input_values}")
             calc_output = calc.func(**input_values)
+            logger.debug(f"  Calculation output: {calc_output!r}")
             for leaf_parts in iter_leaf_path_parts(calc.output_type):
-                leaf_abs_parts = ppath.path.parts + leaf_parts
                 leaf_ppath = ProjectPath(
                     scope=ppath.scope,
-                    path=CalcPath(root=ppath.path.root, parts=leaf_abs_parts),
+                    path=CalcPath(root=ppath.path.root, parts=leaf_parts),
                 )
                 value = get_value_by_parts(calc_output, leaf_parts)
+                logger.debug(f"    Setting output leaf {leaf_ppath} = {value!r}")
                 result[leaf_ppath] = value
         elif isinstance(ppath.path, VerificationPath):
             verif_scope = project.scopes[ppath.scope]
             verif = verif_scope.verifications[ppath.path.verification_name]
-            input_values = {dep_name: predecessor_values[dep_ppath] for dep_name, dep_ppath in verif.dep_ppaths.items()}
+            input_values: dict[str, Any] = {}
+            for dep_name, dep_ppath in verif.dep_ppaths.items():
+                logger.debug(f"  Hydrating input '{dep_name}' from {dep_ppath}")
+                input_values[dep_name] = hydrate_value_by_leaf_values(
+                    project.get_type(dep_ppath),
+                    {
+                        leaf_parts: predecessor_values[
+                            ProjectPath(
+                                scope=dep_ppath.scope,
+                                path=CalcPath(root=dep_ppath.path.root, parts=dep_ppath.path.parts + leaf_parts)
+                                if isinstance(dep_ppath.path, CalcPath)
+                                else ModelPath(root="$", parts=dep_ppath.path.parts + leaf_parts),
+                            )
+                        ]
+                        for leaf_parts in iter_leaf_path_parts(project.get_type(dep_ppath))
+                    },
+                )
+            logger.debug(f"  Calling verification {verif.name} with inputs: {input_values}")
             verif_result = verif.func(**input_values)
+            logger.debug(f"  Verification result: {verif_result!r}")
             result[ppath] = verif_result
         else:
             msg = f"Unsupported path type for evaluation: {type(ppath.path)}"

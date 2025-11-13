@@ -1,4 +1,6 @@
+import logging
 from annotationlib import ForwardRef
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from inspect import isclass
@@ -10,6 +12,8 @@ from ._table import Table
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+
+logger = logging.getLogger(__name__)
 
 
 class PartBase:
@@ -224,6 +228,66 @@ def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
                 msg = f"Unknown part type: {type(part)}"
                 raise TypeError(msg)
     return current
+
+
+def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[PartBase, ...], Any]) -> T:
+    if isclass(model) and issubclass(model, Table):
+        table_mapping = {}
+        for parts, value in leaf_values.items():
+            key_part = parts[0]
+            if not isinstance(key_part, ItemPart):
+                msg = f"Expected ItemPart for Table key, got: {type(key_part)}"
+                raise TypeError(msg)
+            key = key_part.key
+            table_mapping[key] = value
+        return model(table_mapping)  # type: ignore[return-value]
+
+    if not isclass(model) or not issubclass(model, BaseModel):
+        if len(leaf_values) != 1 or any(len(parts) != 0 for parts in leaf_values):
+            msg = f"Expected single leaf value for non-model type '{model}', got: {leaf_values}"
+            raise ValueError(msg)
+        return next(iter(leaf_values.values()))  # type: ignore[return-value]
+
+    field_values: dict[str, Any] = {}
+
+    for field_name, field_info in model.model_fields.items():
+        field_type = field_info.annotation
+        if isinstance(field_type, ForwardRef):
+            field_type = field_type.evaluate()
+        if field_type is None:
+            continue
+
+        matching_leaf_parts = [
+            parts
+            for parts in leaf_values
+            if len(parts) > 0 and isinstance(parts[0], AttributePart) and parts[0].name == field_name
+        ]
+        logger.debug(f"Hydrating field '{field_name}' of type '{field_type}' with leaf parts: {matching_leaf_parts}")
+        logger.debug(f"Available leaf values: {leaf_values}")
+
+        if issubclass(field_type, BaseModel):
+            sub_leaf_values = {tuple(parts[1:]): leaf_values[parts] for parts in matching_leaf_parts}
+            field_value = hydrate_value_by_leaf_values(field_type, sub_leaf_values)
+        elif issubclass(field_type, Table):
+            table_mapping = {}
+            for parts in matching_leaf_parts:
+                key_part = parts[1]
+                if not isinstance(key_part, ItemPart):
+                    msg = f"Expected ItemPart for Table key, got: {type(key_part)}"
+                    raise TypeError(msg)
+                key = key_part.key
+                value = leaf_values[parts]
+                table_mapping[key] = value
+            field_value = field_type(table_mapping)
+        else:
+            if len(matching_leaf_parts) != 1 or len(matching_leaf_parts[0]) != 1:
+                msg = f"Expected single leaf part for field '{field_name}', got: {matching_leaf_parts}"
+                raise ValueError(msg)
+            field_value = leaf_values[matching_leaf_parts[0]]
+
+        field_values[field_name] = field_value
+
+    return model(**field_values)
 
 
 if __name__ == "__main__":
