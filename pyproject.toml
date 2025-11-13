@@ -3,7 +3,7 @@ name = "veriq"
 version = "0.0.1"
 description = "A lightweight Python library for managing system requirements, verifications, and design."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
@@ -34,9 +34,13 @@ veriq = "veriq._cli.main:app"
 [dependency-groups]
 dev = [
   "pre-commit>=4.2.0",
+  { include-group = "license" },
   { include-group = "ruff" },
-  { include-group = "typing" },
   { include-group = "test" },
+  { include-group = "typing" },
+]
+license = [
+  "pip-licenses>=5.5.0",
 ]
 ruff = ["ruff>=0.11.13"]
 test = [
@@ -44,8 +48,10 @@ test = [
   # "coverage>=7.8.2", # If you use coverage
 ]
 typing = [
+  "basedpyright>=1.33.0",
   "mypy>=1.16.0",
-  { include-group = "test" },  # For type checking test code
+  "ty>=0.0.1a26",
+  { include-group = "test" },
 ]
 
 [build-system]
@@ -54,6 +60,9 @@ build-backend = "uv_build"
 
 [tool.mypy]
 strict = true
+
+[tool.pip-licenses]
+allow-only = "MIT License;BSD License;Apache 2.0;Python Software Foundation License;PSF-2.0;ISC License (ISCL);Apache Software License;The Unlicense (Unlicense);MIT;BSD-3-Clause"
 
 [tool.pytest.ini_options]
 addopts = "-ra --verbose --verbose --capture=no --strict-markers --color=yes --log-cli-level=INFO"
@@ -66,7 +75,7 @@ line-length = 120
 select = ["ALL"]
 # Modify the following rules according to your preferences
 ignore = [
-  # "PLR2004", # magic numbers
+  "PLR2004",  # magic numbers
   "S101",  # use of assert
   "G",  # logging format
   # "ANN101",  # missing type annotation for self in method
@@ -89,7 +98,10 @@ ignore = [
   # "PLR0913", # Too many arguments to function call
   #     "D407",    # Missing dashed underline after section
   #     "ERA001",  # Commented out code
+  "FIX001",  # FIXME comments
   "FIX002",  # Fixme comment
+  "FIX004",  # HACK comments
+  "TD001",  # FIXME
   # "S311",    # suspicious-non-cryptographic-random-usage
   #     "EM101",   # raw-string-in-exception
   #     "TRY003",  # Avoid specifying long messages outside the exception class
