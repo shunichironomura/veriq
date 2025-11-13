@@ -1,15 +1,22 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ._path import CalcPath, ModelPath, ProjectPath, VerificationPath
-from ._utils import iter_leaf_path_parts
+from ._path import CalcPath, ModelPath, ProjectPath, VerificationPath, iter_leaf_path_parts
 
 if TYPE_CHECKING:
     from ._models import Project
 
 
-def build_dependencies_graph(project: Project) -> dict[ProjectPath, set[ProjectPath]]:  # noqa: PLR0912, C901
-    dependencies_dd: defaultdict[ProjectPath, set[ProjectPath]] = defaultdict(set)
+@dataclass(slots=True)
+class DepencenciesGraph:
+    predecessors: dict[ProjectPath, set[ProjectPath]]
+    successors: dict[ProjectPath, set[ProjectPath]]
+
+
+def build_dependencies_graph(project: Project) -> DepencenciesGraph:  # noqa: PLR0912, C901
+    predecessors_dd: defaultdict[ProjectPath, set[ProjectPath]] = defaultdict(set)
+    successors_dd: defaultdict[ProjectPath, set[ProjectPath]] = defaultdict(set)
 
     for scope_name, scope in project.scopes.items():
         for calc_name, calc in scope.calculations.items():
@@ -33,7 +40,8 @@ def build_dependencies_graph(project: Project) -> dict[ProjectPath, set[ProjectP
                             scope=scope_name,
                             path=CalcPath(root=f"@{calc_name}", parts=dst_leaf_parts),
                         )
-                        dependencies_dd[src_leaf_ppath].add(dst_leaf_ppath)
+                        predecessors_dd[dst_leaf_ppath].add(src_leaf_ppath)
+                        successors_dd[src_leaf_ppath].add(dst_leaf_ppath)
 
         for verif_name, verif in scope.verifications.items():
             for dep_ppath in verif.dep_ppaths.values():
@@ -55,6 +63,10 @@ def build_dependencies_graph(project: Project) -> dict[ProjectPath, set[ProjectP
                         scope=scope_name,
                         path=VerificationPath(root=f"?{verif_name}"),
                     )
-                    dependencies_dd[src_leaf_ppath].add(dst_leaf_ppath)
+                    predecessors_dd[dst_leaf_ppath].add(src_leaf_ppath)
+                    successors_dd[src_leaf_ppath].add(dst_leaf_ppath)
 
-    return dict(dependencies_dd)
+    return DepencenciesGraph(
+        predecessors=dict(predecessors_dd),
+        successors=dict(successors_dd),
+    )

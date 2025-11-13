@@ -1,8 +1,15 @@
+from annotationlib import ForwardRef
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, ClassVar, Self
+from inspect import isclass
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from pydantic import BaseModel
+
+from ._table import Table
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class PartBase:
@@ -146,7 +153,7 @@ def parse_path(path_str: str) -> ModelPath | CalcPath | VerificationPath:
     raise ValueError(msg)
 
 
-def fetch(root_model: Any, path: str) -> Any:
+def _fetch(root_model: Any, path: str) -> Any:
     path_obj = ModelPath.parse(path)
     current: Any = root_model
     for part in path_obj.parts:
@@ -169,6 +176,54 @@ class ProjectPath:
 
     def __str__(self) -> str:
         return f"{self.scope}::{self.path}"
+
+
+def iter_leaf_path_parts(
+    model: Any,
+    *,
+    _current_path_parts: tuple[PartBase, ...] = (),
+) -> Generator[tuple[PartBase, ...]]:
+    if isinstance(model, ForwardRef):
+        model = model.evaluate()
+
+    if not isclass(model):
+        yield _current_path_parts
+        return
+    if issubclass(model, Table):
+        for key in model.expected_keys:
+            yield (
+                *_current_path_parts,
+                ItemPart(key=key),
+            )
+        return
+    if not issubclass(model, BaseModel):
+        yield _current_path_parts
+        return
+
+    for field_name, field_info in model.model_fields.items():
+        field_type = field_info.annotation
+        if isinstance(field_type, ForwardRef):
+            field_type = field_type.evaluate()
+        if field_type is None:
+            continue
+        yield from iter_leaf_path_parts(
+            field_type,
+            _current_path_parts=(*_current_path_parts, AttributePart(name=field_name)),
+        )
+
+
+def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
+    current: Any = data
+    for part in parts:
+        match part:
+            case AttributePart(name):
+                current = getattr(current, name)
+            case ItemPart(key):
+                current = current[key]
+            case _:
+                msg = f"Unknown part type: {type(part)}"
+                raise TypeError(msg)
+    return current
 
 
 if __name__ == "__main__":
@@ -239,8 +294,8 @@ if __name__ == "__main__":
 
     assert ModelPath.parse("$.sub.a") == path
 
-    assert fetch(model, "$.x") == 10
-    assert fetch(model, "$.sub.a") == 1
-    assert fetch(model, "$.sub.b") == 2
-    assert fetch(model, "$.table[option_a]") == 3.14
-    assert fetch(model, "$.table_2[nominal, option_b]") == 0.8
+    assert _fetch(model, "$.x") == 10
+    assert _fetch(model, "$.sub.a") == 1
+    assert _fetch(model, "$.sub.b") == 2
+    assert _fetch(model, "$.table[option_a]") == 3.14
+    assert _fetch(model, "$.table_2[nominal, option_b]") == 0.8

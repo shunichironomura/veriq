@@ -114,7 +114,30 @@ class Project:
             if calculation is None:
                 msg = f"Calculation '{calc_name}' not found in scope '{scope.name}'."
                 raise KeyError(msg)
-            return calculation.output_type
+            current_type = calculation.output_type
+            for part in ppath.path.parts:
+                if isinstance(current_type, ForwardRef):
+                    current_type = current_type.evaluate()
+                match part:
+                    case AttributePart(name):
+                        try:
+                            field_info = current_type.model_fields[name]
+                        except KeyError as e:
+                            msg = f"Attribute '{name}' not found in model '{current_type.__name__}'."
+                            raise KeyError(msg) from e
+                        current_type = field_info.annotation
+                    case ItemPart(key):
+                        args = get_args(current_type)
+                        if len(args) != 2:
+                            msg = f"Type '{current_type}' is not subscriptable with key '{key}'."
+                            raise TypeError(msg)
+                        current_type = args[1]  # type: ignore[assignment]
+                    case _:
+                        msg = f"Unknown part type: {type(part)}"
+                        raise TypeError(msg)
+            if isinstance(current_type, ForwardRef):
+                current_type = current_type.evaluate()
+            return current_type
 
         if isinstance(ppath.path, VerificationPath):
             return bool
