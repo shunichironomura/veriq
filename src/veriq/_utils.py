@@ -9,14 +9,6 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
-def model_to_flat_dict(model: type[BaseModel]) -> dict[str, Any]:
-    """Convert model to dict without recursive conversion."""
-    result = {}
-    for field_name in model.model_fields:
-        result[field_name] = getattr(model_instance, field_name)
-    return result
-
-
 def iter_leaf_path_parts(
     model: Any,
     *,

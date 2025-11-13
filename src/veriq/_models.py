@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, get_args
 
@@ -10,7 +9,7 @@ from pydantic import BaseModel
 from scoped_context import NoContextError, ScopedContext
 from typing_extensions import _AnnotatedAlias
 
-from ._path import CalcPath, ModelPath, ProjectPath, VerificationPath, parse_path
+from ._path import ProjectPath, parse_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

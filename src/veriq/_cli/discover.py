@@ -7,10 +7,13 @@ import importlib
 import sys
 from dataclasses import dataclass
 from logging import getLogger
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from veriq._exceptions import VeriqCLIEError
 from veriq._models import Scope
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = getLogger(__name__)
 

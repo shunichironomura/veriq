@@ -1,11 +1,8 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
 
 
 class PartBase:
@@ -20,60 +17,6 @@ class AttributePart(PartBase):
 @dataclass(slots=True, frozen=True)
 class ItemPart(PartBase):
     key: str | tuple[str, ...]
-
-
-# def serialize_path(root: str, parts: Iterable[PartBase]) -> str:
-#     result = root
-#     for part in parts:
-#         match part:
-#             case AttributePart(name):
-#                 result += f".{name}"
-#             case ItemPart(key):
-#                 result += f"[{key}]"
-#             case _:
-#                 msg = f"Unknown part type: {type(part)}"
-#                 raise TypeError(msg)
-#     return result
-
-
-# def deserialize_path(parts_str: str) -> tuple[str, list[PartBase]]:
-#     """Deserialize parts from a string representation.
-
-#     Examples:
-#         >>> deserialize_parts(".sub.a[option_a]")
-#         [AttributePart(name='sub'), AttributePart(name='a'), ItemPart(key='option_a')]
-#         >>> deserialize_parts(".table_2[nominal, option_b]")
-#         [AttributePart(name='table_2'), ItemPart(key=('nominal', 'option_b'))]
-
-#     """
-#     s = parts_str.strip()
-#     parts: list[PartBase] = []
-#     i = 0
-#     while i < len(s):
-#         if s[i] == ".":  # Attribute access
-#             i += 1
-#             start = i
-#             while i < len(s) and s[i] not in ".[":
-#                 i += 1
-#             name = s[start:i]
-#             parts.append(AttributePart(name=name))
-#         elif s[i] == "[":  # Item access
-#             i += 1
-#             start = i
-#             while i < len(s) and s[i] != "]":
-#                 i += 1
-#             key_str = s[start:i]
-#             if "," in key_str:
-#                 keys = tuple(k.strip() for k in key_str.split(","))
-#                 parts.append(ItemPart(key=keys))
-#             else:
-#                 parts.append(ItemPart(key=key_str.strip()))
-#             i += 1  # Skip the closing ']'
-#         else:
-#             msg = f"Unexpected character at position {i}: {s[i]}"
-#             raise ValueError(msg)
-
-#     return parts
 
 
 @dataclass(slots=True, frozen=True)
@@ -153,16 +96,6 @@ class ModelPath(Path):
             msg = f"ModelPath root must be '{self.ROOT_SYMBOL}'. Got: {self.root}"
             raise ValueError(msg)
 
-    # @classmethod
-    # def parse(cls, path_str: str) -> Self:
-    #     s = path_str.strip()
-    #     if not s.startswith(cls.root):
-    #         msg = f"ModelPath must start with '{cls.root}'. Got: {path_str}"
-    #         raise ValueError(msg)
-    #     parts_str = s[len(cls.root) :]
-    #     parts = deserialize_path(parts_str)
-    #     return cls(parts=tuple(parts))
-
 
 @dataclass(slots=True, frozen=True)
 class CalcPath(Path):
@@ -230,10 +163,6 @@ class ProjectPath:
         return f"{self.scope}::{self.path}"
 
 
-# def calc(root_model: BaseModel, calc_name: str, path: str) -> Any:
-#     raise NotImplementedError
-
-
 if __name__ == "__main__":
     import veriq as vq
 
@@ -292,6 +221,7 @@ if __name__ == "__main__":
     )
 
     path = ModelPath(
+        "$",
         (
             AttributePart(name="sub"),
             AttributePart(name="a"),
@@ -306,8 +236,3 @@ if __name__ == "__main__":
     assert fetch(model, "$.sub.b") == 2
     assert fetch(model, "$.table[option_a]") == 3.14
     assert fetch(model, "$.table_2[nominal, option_b]") == 0.8
-
-    # assert calc(model, "calc_42", "$") == 42
-
-    # assert calc(model, "calc_y", "y") == 100
-    # assert calc(model, "calc_y", "$.y") == 100
