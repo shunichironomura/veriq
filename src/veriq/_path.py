@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from pydantic import BaseModel
 
-import veriq as vq
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class PartBase:
@@ -21,56 +22,135 @@ class ItemPart(PartBase):
     key: str | tuple[str, ...]
 
 
+def serialize_parts(parts: Iterable[PartBase]) -> str:
+    result = ""
+    for part in parts:
+        match part:
+            case AttributePart(name):
+                result += f".{name}"
+            case ItemPart(key):
+                result += f"[{key}]"
+            case _:
+                msg = f"Unknown part type: {type(part)}"
+                raise TypeError(msg)
+    return result
+
+
+def deserialize_parts(parts_str: str) -> list[PartBase]:
+    """Deserialize parts from a string representation.
+
+    Examples:
+        >>> deserialize_parts(".sub.a[option_a]")
+        [AttributePart(name='sub'), AttributePart(name='a'), ItemPart(key='option_a')]
+        >>> deserialize_parts(".table_2[nominal, option_b]")
+        [AttributePart(name='table_2'), ItemPart(key=('nominal', 'option_b'))]
+
+    """
+    s = parts_str.strip()
+    parts: list[PartBase] = []
+    i = 0
+    while i < len(s):
+        if s[i] == ".":  # Attribute access
+            i += 1
+            start = i
+            while i < len(s) and s[i] not in ".[":
+                i += 1
+            name = s[start:i]
+            parts.append(AttributePart(name=name))
+        elif s[i] == "[":  # Item access
+            i += 1
+            start = i
+            while i < len(s) and s[i] != "]":
+                i += 1
+            key_str = s[start:i]
+            if "," in key_str:
+                keys = tuple(k.strip() for k in key_str.split(","))
+                parts.append(ItemPart(key=keys))
+            else:
+                parts.append(ItemPart(key=key_str.strip()))
+            i += 1  # Skip the closing ']'
+        else:
+            msg = f"Unexpected character at position {i}: {s[i]}"
+            raise ValueError(msg)
+
+    return parts
+
+
 @dataclass(slots=True, frozen=True)
 class ModelPath:
-    parts: list[PartBase]
+    ROOT_SYMBOL: ClassVar[str] = "$"
+    parts: tuple[PartBase, ...]
 
     def __str__(self) -> str:
-        result = "$"
-        for part in self.parts:
-            match part:
-                case AttributePart(name):
-                    result += f".{name}"
-                case ItemPart(key):
-                    result += f"[{key}]"
-                case _:
-                    msg = f"Unknown part type: {type(part)}"
-                    raise TypeError(msg)
-        return result
+        return f"{self.ROOT_SYMBOL}{serialize_parts(self.parts)}"
 
     @classmethod
     def parse(cls, path_str: str) -> Self:
         s = path_str.strip()
-        if not s.startswith("$"):
-            s = "$." + s  # Prepend '$.' if missing
+        if not s.startswith(cls.ROOT_SYMBOL):
+            msg = f"ModelPath must start with '{cls.ROOT_SYMBOL}'. Got: {path_str}"
+            raise ValueError(msg)
+        parts_str = s[len(cls.ROOT_SYMBOL) :]
+        parts = deserialize_parts(parts_str)
+        return cls(parts=tuple(parts))
 
-        parts: list[PartBase] = []
-        i = 1  # Skip the initial '$'
-        while i < len(s):
-            if s[i] == ".":  # Attribute access
-                i += 1
-                start = i
-                while i < len(s) and s[i] not in ".[":
-                    i += 1
-                name = s[start:i]
-                parts.append(AttributePart(name=name))
-            elif s[i] == "[":  # Item access
-                i += 1
-                start = i
-                while i < len(s) and s[i] != "]":
-                    i += 1
-                key_str = s[start:i]
-                if "," in key_str:
-                    keys = tuple(k.strip() for k in key_str.split(","))
-                    parts.append(ItemPart(key=keys))
-                else:
-                    parts.append(ItemPart(key=key_str.strip()))
-                i += 1  # Skip the closing ']'
-            else:
-                msg = f"Unexpected character at position {i}: {s[i]}"
-                raise ValueError(msg)
 
-        return cls(parts=parts)
+@dataclass(slots=True, frozen=True)
+class CalcPath:
+    PREFIX: ClassVar[str] = "@"
+    root_name: str
+    parts: tuple[PartBase, ...]
+
+    def __str__(self) -> str:
+        return f"{self.PREFIX}{self.root_name}{serialize_parts(self.parts)}"
+
+    @classmethod
+    def parse(cls, path_str: str) -> Self:
+        s = path_str.strip()
+        if not s.startswith(cls.PREFIX):
+            msg = f"CalcPath must start with '{cls.PREFIX}'. Got: {path_str}"
+            raise ValueError(msg)
+        s = s[len(cls.PREFIX) :]
+        parts_including_root = deserialize_parts(s)
+        if not parts_including_root:
+            msg = f"CalcPath must include root name. Got: {path_str}"
+            raise ValueError(msg)
+        root_part = parts_including_root[0]
+        if not isinstance(root_part, AttributePart):
+            msg = f"CalcPath root must be an attribute part. Got: {type(root_part)}"
+            raise ValueError(msg)  # noqa: TRY004
+        root_name = root_part.name
+        parts = parts_including_root[1:]
+        return cls(root_name=root_name, parts=tuple(parts))
+
+
+@dataclass(slots=True, frozen=True)
+class VerificationPath:
+    PREFIX: ClassVar[str] = "?"
+    root_name: str
+    parts: tuple[PartBase, ...]
+
+    def __str__(self) -> str:
+        return f"{self.PREFIX}{self.root_name}{serialize_parts(self.parts)}"
+
+    @classmethod
+    def parse(cls, path_str: str) -> Self:
+        s = path_str.strip()
+        if not s.startswith(cls.PREFIX):
+            msg = f"VerificationPath must start with '{cls.PREFIX}'. Got: {path_str}"
+            raise ValueError(msg)
+        s = s[len(cls.PREFIX) :]
+        parts_including_root = deserialize_parts(s)
+        if not parts_including_root:
+            msg = f"VerificationPath must include root name. Got: {path_str}"
+            raise ValueError(msg)
+        root_part = parts_including_root[0]
+        if not isinstance(root_part, AttributePart):
+            msg = f"VerificationPath root must be an attribute part. Got: {type(root_part)}"
+            raise ValueError(msg)  # noqa: TRY004
+        root_name = root_part.name
+        parts = parts_including_root[1:]
+        return cls(root_name=root_name, parts=tuple(parts))
 
 
 def fetch(root_model: Any, path: str) -> Any:
@@ -89,11 +169,19 @@ def fetch(root_model: Any, path: str) -> Any:
     return current
 
 
+@dataclass(slots=True, frozen=True)
+class ProjectPath:
+    scope: str
+    path: ModelPath | CalcPath | VerificationPath
+
+
 # def calc(root_model: BaseModel, calc_name: str, path: str) -> Any:
 #     raise NotImplementedError
 
 
 if __name__ == "__main__":
+    import veriq as vq
+
     scope = vq.Scope("scope_name")
 
     class Option(StrEnum):
@@ -149,10 +237,10 @@ if __name__ == "__main__":
     )
 
     path = ModelPath(
-        [
+        (
             AttributePart(name="sub"),
             AttributePart(name="a"),
-        ],
+        ),
     )
     assert str(path) == "$.sub.a"
 

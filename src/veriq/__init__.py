@@ -4,6 +4,7 @@ __all__ = [
     "Calc",
     "Fetch",
     "Project",
+    "Ref",
     "Requirement",
     "Scope",
     "Table",
@@ -12,6 +13,6 @@ __all__ = [
 ]
 
 from ._decorators import assume
-from ._models import Calc, Fetch, Project, Requirement, Scope
+from ._models import Calc, Fetch, Project, Ref, Requirement, Scope
 from ._relations import depends
 from ._table import Table
