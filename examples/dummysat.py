@@ -33,6 +33,11 @@ class OperationMode(StrEnum):
     MISSION = "mission"
 
 
+class OperationPhase(StrEnum):
+    INITIAL = "initial"
+    CRUISE = "cruise"
+
+
 @system.root_model()
 class SatelliteModel(BaseModel):
     pass
@@ -56,6 +61,7 @@ class ReactionWheelAssemblyModel(BaseModel):
 
     # required by PowerInterface
     power_consumption: vq.Table[OperationMode, float]
+    peak_power_consumption: vq.Table[tuple[OperationPhase, OperationMode], float]
 
     # required by StructuralInterface
     mass: float
