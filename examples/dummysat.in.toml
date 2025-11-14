@@ -1,0 +1,38 @@
+[System.model]
+
+[AOCS.model]
+[AOCS.model.requirement]
+
+[AOCS.model.design]
+
+[RWA.model]
+mass = 6.0
+
+[RWA.model.wheel_x]
+max_torque = 0.1
+power_consumption = 5.0
+mass = 2.0
+
+[RWA.model.wheel_y]
+max_torque = 0.1
+power_consumption = 5.0
+mass = 2.0
+
+[RWA.model.wheel_z]
+max_torque = 0.1
+power_consumption = 5.0
+mass = 2.0
+
+[RWA.model.power_consumption]
+nominal = 15.0
+safe = 5.0
+mission = 10.0
+
+[Power.model.design]
+battery_a = { capacity = 100.0 }
+battery_b = { capacity = 100.0 }
+solar_panel = { area = 2.0, efficiency = 0.3 }
+
+[Power.model.requirement]
+
+[Thermal.model]

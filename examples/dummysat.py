@@ -1,5 +1,7 @@
 import logging
+import tomllib
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel
@@ -194,38 +196,17 @@ print("Calculation order:")
 for ppath in ppath_in_calc_order:
     print(str(ppath))
 
-result = vq.evaluate_project(
-    project,
-    {
-        "System": SatelliteModel(),
-        "AOCS": AOCSModel(
-            design=AOCSDesign(),
-            requirement=AOCSRequirement(),
-        ),
-        "RWA": ReactionWheelAssemblyModel(
-            wheel_x=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            wheel_y=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            wheel_z=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            power_consumption=vq.Table(
-                {
-                    OperationMode.NOMINAL: 15.0,
-                    OperationMode.SAFE: 5.0,
-                    OperationMode.MISSION: 10.0,
-                },
-            ),
-            mass=6.0,
-        ),
-        "Power": PowerSubsystemModel(
-            design=PowerSubsystemDesign(
-                battery_a=BatteryModel(capacity=100.0),
-                battery_b=BatteryModel(capacity=100.0),
-                solar_panel=SolarPanelModel(area=2.0, efficiency=0.3),
-            ),
-            requirement=PowerSubsystemRequirement(),
-        ),
-        "Thermal": ThermalModel(),
-    },
-)
+
+model_data_file_path = Path(__file__).parent / "dummysat.in.toml"
+model_data = {}
+with model_data_file_path.open("rb") as f:
+    model_data_file_contents = tomllib.load(f)
+
+for scope_name, scope in project.scopes.items():
+    model_data[scope_name] = scope.get_root_model().model_validate(model_data_file_contents[scope_name]["model"])
+
+
+result = vq.evaluate_project(project, model_data)
 
 print("===============================")
 print("Evaluation result:")
