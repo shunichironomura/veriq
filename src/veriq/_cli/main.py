@@ -6,6 +6,9 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.logging import RichHandler
+from rich.panel import Panel
+from rich.table import Table
 
 from veriq._build import build_dependencies_graph
 from veriq._eval import evaluate_project
@@ -18,7 +21,10 @@ from .discover import get_module_data_from_path
 app = typer.Typer()
 
 logger = logging.getLogger(__name__)
-console = Console()
+# Console for stderr (info/errors)
+err_console = Console(stderr=True)
+# Console for stdout (results)
+out_console = Console()
 
 
 @app.callback()
@@ -28,7 +34,20 @@ def callback(
 ) -> None:
     """Veriq CLI."""
     log_level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(level=log_level)
+
+    # Configure rich logging handler to output to stderr
+    logging.basicConfig(
+        level=log_level,
+        format="%(message)s",
+        handlers=[
+            RichHandler(
+                console=err_console,
+                show_time=False,
+                show_path=verbose,
+                rich_tracebacks=True,
+            ),
+        ],
+    )
 
 
 def _load_project_from_script(script_path: Path, project_name: str | None = None) -> Project:
@@ -66,7 +85,7 @@ def _load_project_from_script(script_path: Path, project_name: str | None = None
     for name in dir(module):
         obj = getattr(module, name)
         if isinstance(obj, Project):
-            logger.info(f"Found project: {name}")
+            logger.debug(f"Found project: {name}")
             return obj
 
     msg = "Could not find Project in module, try using --project"
@@ -123,56 +142,68 @@ def calc(
     ] = False,
 ) -> None:
     """Perform calculations on a project and export results."""
+    err_console.print()
+
     # Load the project
     if ":" in path:
         # Module path format
-        logger.info(f"Loading project from module path: {path}")
+        err_console.print(f"[cyan]Loading project from module:[/cyan] {path}")
         project = _load_project_from_module_path(path)
     else:
         # Script path format
         script_path = Path(path)
-        logger.info(f"Loading project from script: {script_path}")
+        err_console.print(f"[cyan]Loading project from script:[/cyan] {script_path}")
         project = _load_project_from_script(script_path, project_var)
 
-    logger.info(f"Loaded project: {project.name}")
+    err_console.print(f"[cyan]Project:[/cyan] [bold]{project.name}[/bold]")
+    err_console.print()
 
     # Load model data
-    logger.info(f"Loading model data from: {input}")
+    err_console.print(f"[cyan]Loading input from:[/cyan] {input}")
     model_data = load_model_data_from_toml(project, input)
 
     # Evaluate the project
-    logger.info("Evaluating project...")
+    err_console.print("[cyan]Evaluating project...[/cyan]")
     results = evaluate_project(project, model_data)
+    err_console.print()
 
     # Check verifications if requested
     if verify:
         verification_failed = False
+        verification_results: list[tuple[str, bool]] = []
+
         for ppath, value in results.items():
             if isinstance(ppath.path, VerificationPath):
                 verification_name = ppath.path.verification_name
                 scope_name = ppath.scope
+                verification_results.append((f"{scope_name}.{verification_name}", value))
                 if not value:
-                    console.print(
-                        f"[red]✗[/red] Verification failed: {scope_name}.{verification_name}",
-                        style="red",
-                    )
                     verification_failed = True
-                else:
-                    console.print(
-                        f"[green]✓[/green] Verification passed: {scope_name}.{verification_name}",
-                        style="green",
-                    )
+
+        # Create a table for verification results
+        if verification_results:
+            table = Table(show_header=True, header_style="bold cyan", box=None)
+            table.add_column("Verification", style="dim")
+            table.add_column("Result", justify="center")
+
+            for verif_name, passed in verification_results:
+                status = "[green]✓ PASS[/green]" if passed else "[red]✗ FAIL[/red]"
+                table.add_row(verif_name, status)
+
+            err_console.print(Panel(table, title="[bold]Verification Results[/bold]", border_style="cyan"))
+            err_console.print()
 
         if verification_failed:
-            logger.error("Some verifications failed")
+            err_console.print("[red]✗ Some verifications failed[/red]")
             raise typer.Exit(1)
-        logger.info("All verifications passed")
 
     # Export results
-    logger.info(f"Exporting results to: {output}")
+    err_console.print(f"[cyan]Exporting results to:[/cyan] {output}")
     export_to_toml(project, model_data, results, output)
 
-    console.print(f"[green]✓[/green] Results exported to {output}")
+    err_console.print()
+    err_console.print("[green]✓ Calculation complete[/green]")
+    err_console.print()
 
 
 @app.command()
@@ -188,31 +219,50 @@ def check(
     ] = None,
 ) -> None:
     """Check the validity of a project without performing calculations."""
+    err_console.print()
+
     # Load the project
     if ":" in path:
         # Module path format
-        logger.info(f"Loading project from module path: {path}")
+        err_console.print(f"[cyan]Loading project from module:[/cyan] {path}")
         project = _load_project_from_module_path(path)
     else:
         # Script path format
         script_path = Path(path)
-        logger.info(f"Loading project from script: {script_path}")
+        err_console.print(f"[cyan]Loading project from script:[/cyan] {script_path}")
         project = _load_project_from_script(script_path, project_var)
 
-    logger.info(f"Loaded project: {project.name}")
+    err_console.print(f"[cyan]Project:[/cyan] [bold]{project.name}[/bold]")
+    err_console.print()
 
     # Check if building the dependencies graph raises any errors
+    err_console.print("[cyan]Validating dependencies...[/cyan]")
     build_dependencies_graph(project)
+    err_console.print()
 
-    # Display project information
-    console.print(f"\n[bold]Project:[/bold] {project.name}")
-    console.print(f"[bold]Scopes:[/bold] {len(project.scopes)}")
+    # Create a table for project information
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Scope", style="bold")
+    table.add_column("Calculations", justify="right", style="yellow")
+    table.add_column("Verifications", justify="right", style="green")
+
     for scope_name, scope in project.scopes.items():
         num_calcs = len(scope.calculations)
         num_verifs = len(scope.verifications)
-        console.print(f"  • {scope_name}: {num_calcs} calculations, {num_verifs} verifications")
+        table.add_row(scope_name, str(num_calcs), str(num_verifs))
 
-    console.print("\n[green]✓[/green] Project is valid")
+    err_console.print(
+        Panel(
+            table,
+            title=f"[bold]Project: {project.name}[/bold]",
+            subtitle=f"[dim]{len(project.scopes)} scopes[/dim]",
+            border_style="cyan",
+        ),
+    )
+
+    err_console.print()
+    err_console.print("[green]✓ Project is valid[/green]")
+    err_console.print()
 
 
 def main() -> None:

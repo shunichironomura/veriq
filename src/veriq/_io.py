@@ -118,7 +118,7 @@ def export_to_toml(
     with output_path.open("wb") as f:
         tomli_w.dump(toml_data, f)
 
-    logger.info(f"Exported results to {output_path}")
+    logger.debug(f"Exported results to {output_path}")
 
 
 def load_model_data_from_toml(
@@ -149,5 +149,5 @@ def load_model_data_from_toml(
         else:
             logger.debug(f"No model data found for scope '{scope_name}' in {input_path}")
 
-    logger.info(f"Loaded model data from {input_path}")
+    logger.debug(f"Loaded model data from {input_path}")
     return model_data
