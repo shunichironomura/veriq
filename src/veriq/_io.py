@@ -1,4 +1,5 @@
 import logging
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -118,3 +119,35 @@ def export_to_toml(
         tomli_w.dump(toml_data, f)
 
     logger.info(f"Exported results to {output_path}")
+
+
+def load_model_data_from_toml(
+    project: Project,
+    input_path: Path | str,
+) -> dict[str, BaseModel]:
+    """Load model data from a TOML file for each scope in the project.
+
+    Args:
+        project: The project containing scope definitions
+        input_path: Path to the input TOML file containing model data
+
+    Returns:
+        A dictionary mapping scope names to their validated root model instances
+
+    """
+    input_path = Path(input_path)
+
+    with input_path.open("rb") as f:
+        toml_contents = tomllib.load(f)
+
+    model_data: dict[str, BaseModel] = {}
+    for scope_name, scope in project.scopes.items():
+        if scope_name in toml_contents and "model" in toml_contents[scope_name]:
+            root_model = scope.get_root_model()
+            model_data[scope_name] = root_model.model_validate(toml_contents[scope_name]["model"])
+            logger.debug(f"Loaded model data for scope '{scope_name}'")
+        else:
+            logger.debug(f"No model data found for scope '{scope_name}' in {input_path}")
+
+    logger.info(f"Loaded model data from {input_path}")
+    return model_data

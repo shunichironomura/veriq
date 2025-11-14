@@ -1,5 +1,4 @@
 import logging
-import tomllib
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -204,12 +203,7 @@ for ppath in ppath_in_calc_order:
 
 
 model_data_file_path = Path(__file__).parent / "dummysat.in.toml"
-model_data = {}
-with model_data_file_path.open("rb") as f:
-    model_data_file_contents = tomllib.load(f)
-
-for scope_name, scope in project.scopes.items():
-    model_data[scope_name] = scope.get_root_model().model_validate(model_data_file_contents[scope_name]["model"])
+model_data = vq.load_model_data_from_toml(project, model_data_file_path)
 
 
 result = vq.evaluate_project(project, model_data)
