@@ -1,15 +1,9 @@
-import logging
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel
-from rich import print  # noqa: A004
 
 import veriq as vq
-from veriq._utils import topological_sort
-
-logging.basicConfig(level=logging.DEBUG)
 
 project = vq.Project("Project")
 
@@ -184,36 +178,3 @@ with system.fetch_requirement("REQ-SYS-002"):
         ],
     )
     vq.depends(system.fetch_requirement("REQ-SYS-001"))
-
-print(project)
-
-dep_graph = vq.build_dependencies_graph(project)
-
-for src, dsts in dep_graph.successors.items():
-    for dst in dsts:
-        print(f"{src} -> {dst}")
-
-print(dep_graph.predecessors)
-
-ppath_in_calc_order = topological_sort(dep_graph.successors)
-print("===============================")
-print("Calculation order:")
-for ppath in ppath_in_calc_order:
-    print(str(ppath))
-
-
-model_data_file_path = Path(__file__).parent / "dummysat.in.toml"
-model_data = vq.load_model_data_from_toml(project, model_data_file_path)
-
-
-result = vq.evaluate_project(project, model_data)
-
-print("===============================")
-print("Evaluation result:")
-for ppath, value in result.items():
-    print(f"{ppath}: {value!r}")
-
-# Export results to TOML
-output_file_path = Path(__file__).parent / "dummysat.out.generated.toml"
-vq.export_to_toml(project, model_data, result, output_file_path)
-print(f"\nExported results to {output_file_path}")
