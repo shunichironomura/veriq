@@ -21,7 +21,19 @@ def _serialize_value(value: Any) -> Any:
     """Serialize a value for TOML export, handling special types like Table."""
     if isinstance(value, Table):
         # Convert Table (dict with enum keys) to dict with string keys
-        return {k.value if hasattr(k, "value") else str(k): v for k, v in value.items()}
+        result = {}
+        for k, v in value.items():
+            if isinstance(k, tuple):
+                # Tuple of enums - join their values
+                key_str = ",".join(item.value if hasattr(item, "value") else str(item) for item in k)
+            elif hasattr(k, "value"):
+                # Single enum
+                key_str = k.value
+            else:
+                # Other types
+                key_str = str(k)
+            result[key_str] = v
+        return result
     return value
 
 
