@@ -21,6 +21,7 @@ dependencies = [
   "pydantic>=2.11.7",
   "rich>=14.0.0",
   "scoped-context>=0.0.1",
+  # "spacecraft-thermal-multi-node-analysis",
   "typer>=0.16.1",
 ]
 
@@ -128,3 +129,7 @@ unfixable = [
   "ARG001",  # Unused function argument
   "ERA001",  # Commented out code
 ]
+
+# [tool.uv.sources]
+# "spacecraft-thermal-multi-node-analysis" = { git = "ssh://git@github.com/ut-issl/spacecraft-thermal-multi-node-analysis", branch = "mypy" }
+# "spacecraft-thermal-multi-node-analysis" = { path = "../../ut-issl/spacecraft-thermal-multi-node-analysis", editable = true }

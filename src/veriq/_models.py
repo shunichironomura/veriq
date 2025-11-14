@@ -70,7 +70,7 @@ class Project:
         """Get all scopes in the project."""
         return self._scopes
 
-    def get_type(self, ppath: ProjectPath) -> type:
+    def get_type(self, ppath: ProjectPath) -> type:  # noqa: C901,PLR0915,PLR0912
         """Get the type of the given project path."""
         scope = self._scopes.get(ppath.scope)
         if scope is None:
@@ -78,10 +78,7 @@ class Project:
             raise KeyError(msg)
 
         if isinstance(ppath.path, ModelPath):
-            if scope._root_model is None:
-                msg = f"Scope '{scope.name}' does not have a root model defined."
-                raise RuntimeError(msg)
-            current_type: type = scope._root_model
+            current_type: type = scope.get_root_model()  # type: ignore[assignment]
             for part in ppath.path.parts:
                 if isinstance(current_type, ForwardRef):
                     current_type = current_type.evaluate()
@@ -273,6 +270,14 @@ class Scope:
     _requirements: dict[str, Requirement] = field(default_factory=dict)
     _verifications: dict[str, Verification[...]] = field(default_factory=dict)
     _calculations: dict[str, Calculation[Any, ...]] = field(default_factory=dict)
+
+    @property
+    def get_root_model(self) -> type[BaseModel]:
+        """Get the root model of the scope."""
+        if self._root_model is None:
+            msg = f"Scope '{self.name}' does not have a root model defined."
+            raise RuntimeError(msg)
+        return self._root_model
 
     @property
     def requirements(self) -> dict[str, Requirement]:

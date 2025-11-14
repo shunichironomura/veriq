@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel
-from rich import print
+from rich import print  # noqa: A004
 
 import veriq as vq
 from veriq._utils import topological_sort

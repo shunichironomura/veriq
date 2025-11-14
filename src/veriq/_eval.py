@@ -1,11 +1,7 @@
 import logging
-from collections.abc import Mapping
-from typing import Any
-
-from pydantic import BaseModel
+from typing import TYPE_CHECKING, Any
 
 from ._build import build_dependencies_graph
-from ._models import Project
 from ._path import (
     CalcPath,
     ModelPath,
@@ -17,15 +13,20 @@ from ._path import (
 )
 from ._utils import topological_sort
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from pydantic import BaseModel
+
+    from ._models import Project
+
 logger = logging.getLogger(__name__)
 
 
-def evaluate_project(project: Project, model_data: Mapping[str, BaseModel]) -> dict[ProjectPath, Any]:
+def evaluate_project(project: Project, model_data: Mapping[str, BaseModel]) -> dict[ProjectPath, Any]:  # noqa: C901
     result: dict[ProjectPath, Any] = {}
     for scope_name, scope_data in model_data.items():
-        root_model = project.scopes[scope_name]._root_model
-        if root_model is None:
-            continue
+        root_model = project.scopes[scope_name].get_root_model()
         for leaf_path_parts in iter_leaf_path_parts(root_model):
             leaf_path = ProjectPath(
                 scope=scope_name,

@@ -1,8 +1,6 @@
 import logging
 from annotationlib import ForwardRef
-from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import StrEnum
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
@@ -11,7 +9,7 @@ from pydantic import BaseModel
 from ._table import Table
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +212,7 @@ def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
     return current
 
 
-def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[PartBase, ...], Any]) -> T:
+def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[PartBase, ...], Any]) -> T:  # noqa: PLR0912, C901
     if isclass(model) and issubclass(model, Table):
         table_mapping = {}
         for parts, value in leaf_values.items():
