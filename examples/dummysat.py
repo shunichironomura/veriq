@@ -1,14 +1,9 @@
-import logging
 from enum import StrEnum
 from typing import Annotated
 
 from pydantic import BaseModel
-from rich import print  # noqa: A004
 
 import veriq as vq
-from veriq._utils import topological_sort
-
-logging.basicConfig(level=logging.DEBUG)
 
 project = vq.Project("Project")
 
@@ -29,6 +24,11 @@ class OperationMode(StrEnum):
     NOMINAL = "nominal"
     SAFE = "safe"
     MISSION = "mission"
+
+
+class OperationPhase(StrEnum):
+    INITIAL = "initial"
+    CRUISE = "cruise"
 
 
 @system.root_model()
@@ -54,6 +54,7 @@ class ReactionWheelAssemblyModel(BaseModel):
 
     # required by PowerInterface
     power_consumption: vq.Table[OperationMode, float]
+    peak_power_consumption: vq.Table[tuple[OperationPhase, OperationMode], float]
 
     # required by StructuralInterface
     mass: float
@@ -177,57 +178,3 @@ with system.fetch_requirement("REQ-SYS-002"):
         ],
     )
     vq.depends(system.fetch_requirement("REQ-SYS-001"))
-
-print(project)
-
-dep_graph = vq.build_dependencies_graph(project)
-
-for src, dsts in dep_graph.successors.items():
-    for dst in dsts:
-        print(f"{src} -> {dst}")
-
-print(dep_graph.predecessors)
-
-ppath_in_calc_order = topological_sort(dep_graph.successors)
-print("===============================")
-print("Calculation order:")
-for ppath in ppath_in_calc_order:
-    print(str(ppath))
-
-result = vq.evaluate_project(
-    project,
-    {
-        "System": SatelliteModel(),
-        "AOCS": AOCSModel(
-            design=AOCSDesign(),
-            requirement=AOCSRequirement(),
-        ),
-        "RWA": ReactionWheelAssemblyModel(
-            wheel_x=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            wheel_y=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            wheel_z=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            power_consumption=vq.Table(
-                {
-                    OperationMode.NOMINAL: 15.0,
-                    OperationMode.SAFE: 5.0,
-                    OperationMode.MISSION: 10.0,
-                },
-            ),
-            mass=6.0,
-        ),
-        "Power": PowerSubsystemModel(
-            design=PowerSubsystemDesign(
-                battery_a=BatteryModel(capacity=100.0),
-                battery_b=BatteryModel(capacity=100.0),
-                solar_panel=SolarPanelModel(area=2.0, efficiency=0.3),
-            ),
-            requirement=PowerSubsystemRequirement(),
-        ),
-        "Thermal": ThermalModel(),
-    },
-)
-
-print("===============================")
-print("Evaluation result:")
-for ppath, value in result.items():
-    print(f"{ppath}: {value!r}")
