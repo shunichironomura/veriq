@@ -107,5 +107,5 @@ jobs:
     needs: [ruff, mypy, pytest]
     runs-on: ubuntu-latest
     steps:
-    - name: Collect results
-      run: echo "All checks passed!"
+      - name: Collect results
+        run: echo "All checks passed!"
