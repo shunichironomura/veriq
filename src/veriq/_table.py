@@ -72,14 +72,14 @@ class Table[K: (StrEnum, tuple[StrEnum, ...]), V](dict[K, V]):
                 if len(enum_types) == 1:
                     # Single StrEnum key
                     enum_type = enum_types[0]
-                    key = enum_type(str_key)  # type: ignore[assignment]
+                    key = enum_type(str_key)
                 else:
                     # Tuple of StrEnum keys
                     parts = str_key.split(",")
                     if len(parts) != len(enum_types):
                         msg = f"Expected {len(enum_types)} key parts, got {len(parts)} in '{str_key}'"
                         raise ValueError(msg)
-                    key = tuple(enum_type(part) for enum_type, part in zip(enum_types, parts, strict=True))  # type: ignore[assignment]
+                    key = tuple(enum_type(part) for enum_type, part in zip(enum_types, parts, strict=True))
 
                 deserialized[key] = val
 

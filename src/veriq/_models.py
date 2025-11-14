@@ -78,7 +78,7 @@ class Project:
             raise KeyError(msg)
 
         if isinstance(ppath.path, ModelPath):
-            current_type: type = scope.get_root_model()  # type: ignore[assignment]
+            current_type: type = scope.get_root_model()
             for part in ppath.path.parts:
                 if isinstance(current_type, ForwardRef):
                     current_type = current_type.evaluate()
