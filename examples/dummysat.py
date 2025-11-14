@@ -212,3 +212,8 @@ print("===============================")
 print("Evaluation result:")
 for ppath, value in result.items():
     print(f"{ppath}: {value!r}")
+
+# Export results to TOML
+output_file_path = Path(__file__).parent / "dummysat.out.generated.toml"
+vq.export_to_toml(project, model_data, result, output_file_path)
+print(f"\nExported results to {output_file_path}")
