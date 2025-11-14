@@ -176,7 +176,7 @@ def calc(
             if isinstance(ppath.path, VerificationPath):
                 verification_name = ppath.path.verification_name
                 scope_name = ppath.scope
-                verification_results.append((f"{scope_name}.{verification_name}", value))
+                verification_results.append((f"{scope_name}::?{verification_name}", value))
                 if not value:
                     verification_failed = True
 
