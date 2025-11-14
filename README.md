@@ -4,6 +4,8 @@
 > This package is still under active development.
 > There are known issues and limitations.
 
+ • [日本語 readme](https://github.com/shunichironomura/veriq/blob/main/README.ja.md)
+
 `veriq` helps you manage requirements, calculations, and verifications across an engineering project. Think of it as a smart spreadsheet that tracks dependencies between calculations and automatically verifies that requirements are met.
 
 ## Quick Start
