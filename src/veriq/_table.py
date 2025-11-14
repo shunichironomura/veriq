@@ -22,8 +22,8 @@ class Table[K: (StrEnum, tuple[StrEnum, ...]), V](dict[K, V]):
         """The set of expected keys in the table."""
         return self._expected_keys
 
-    def __init__(self, mapping_or_iterable: Mapping[K, V] | Iterable[tuple[K, V]], /, **kwargs: V) -> None:
-        mapping = dict(mapping_or_iterable, **kwargs)
+    def __init__(self, mapping_or_iterable: Mapping[K, V] | Iterable[tuple[K, V]]) -> None:
+        mapping: dict[K, V] = dict(mapping_or_iterable)
 
         if len(mapping) == 0:
             msg = "Table cannot be empty."
@@ -63,4 +63,4 @@ class Table[K: (StrEnum, tuple[StrEnum, ...]), V](dict[K, V]):
             msg = f"Table has disallowed keys: {disallowed_keys}"
             raise ValueError(msg)
 
-        super().__init__(mapping)
+        super().__init__(mapping)  # type: ignore[arg-type]

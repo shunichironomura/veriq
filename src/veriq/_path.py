@@ -157,22 +157,6 @@ def parse_path(path_str: str) -> ModelPath | CalcPath | VerificationPath:
     raise ValueError(msg)
 
 
-def _fetch(root_model: Any, path: str) -> Any:
-    path_obj = ModelPath.parse(path)
-    current: Any = root_model
-    for part in path_obj.parts:
-        match part:
-            case AttributePart(name):
-                current = getattr(current, name)
-            case ItemPart(key):
-                current = current[key]
-            case _:
-                msg = f"Unknown part type: {type(part)}"
-                raise TypeError(msg)
-
-    return current
-
-
 @dataclass(slots=True, frozen=True)
 class ProjectPath:
     scope: str
@@ -194,7 +178,7 @@ def iter_leaf_path_parts(
         yield _current_path_parts
         return
     if issubclass(model, Table):
-        for key in model.expected_keys:
+        for key in model.expected_keys:  # type: ignore[attr-defined]
             yield (
                 *_current_path_parts,
                 ItemPart(key=key),
@@ -240,13 +224,13 @@ def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[P
                 raise TypeError(msg)
             key = key_part.key
             table_mapping[key] = value
-        return model(table_mapping)  # type: ignore[return-value]
+        return model(table_mapping)
 
     if not isclass(model) or not issubclass(model, BaseModel):
         if len(leaf_values) != 1 or any(len(parts) != 0 for parts in leaf_values):
             msg = f"Expected single leaf value for non-model type '{model}', got: {leaf_values}"
             raise ValueError(msg)
-        return next(iter(leaf_values.values()))  # type: ignore[return-value]
+        return next(iter(leaf_values.values()))  # type: ignore[no-any-return]
 
     field_values: dict[str, Any] = {}
 
@@ -265,6 +249,7 @@ def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[P
         logger.debug(f"Hydrating field '{field_name}' of type '{field_type}' with leaf parts: {matching_leaf_parts}")
         logger.debug(f"Available leaf values: {leaf_values}")
 
+        field_value: Any
         if issubclass(field_type, BaseModel):
             sub_leaf_values = {tuple(parts[1:]): leaf_values[parts] for parts in matching_leaf_parts}
             field_value = hydrate_value_by_leaf_values(field_type, sub_leaf_values)
@@ -288,78 +273,3 @@ def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[P
         field_values[field_name] = field_value
 
     return model(**field_values)
-
-
-if __name__ == "__main__":
-    import veriq as vq
-
-    scope = vq.Scope("scope_name")
-
-    class Option(StrEnum):
-        OPTION_A = "option_a"
-        OPTION_B = "option_b"
-
-    class Mode(StrEnum):
-        NOMINAL = "nominal"
-        SAFE = "safe"
-
-    # For debugging
-    vq.Table = dict
-
-    @scope.root_model()
-    class RootModel(BaseModel):
-        x: int  # "x"
-        sub: SubModel  # "sub"
-        table: vq.Table[Option, float]  # "table"
-        table_2: vq.Table[tuple[Mode, Option], float]  # "table_2"
-
-    class SubModel(BaseModel):
-        a: int
-        b: int
-
-    @scope.calculation()
-    def calc_42() -> int:  # "calc_42"
-        return 42
-
-    class CalcResult(BaseModel):
-        y: int
-
-    @scope.calculation()
-    def calc_y() -> CalcResult:
-        return CalcResult(y=100)
-
-    model = RootModel(
-        x=10,
-        sub=SubModel(a=1, b=2),
-        table=vq.Table(
-            {
-                Option.OPTION_A: 3.14,
-                Option.OPTION_B: 2.71,
-            },
-        ),
-        table_2=vq.Table(
-            {
-                (Mode.NOMINAL, Option.OPTION_A): 1.0,
-                (Mode.NOMINAL, Option.OPTION_B): 0.8,
-                (Mode.SAFE, Option.OPTION_A): 0.5,
-                (Mode.SAFE, Option.OPTION_B): 0.4,
-            },
-        ),
-    )
-
-    path = ModelPath(
-        "$",
-        (
-            AttributePart(name="sub"),
-            AttributePart(name="a"),
-        ),
-    )
-    assert str(path) == "$.sub.a"
-
-    assert ModelPath.parse("$.sub.a") == path
-
-    assert _fetch(model, "$.x") == 10
-    assert _fetch(model, "$.sub.a") == 1
-    assert _fetch(model, "$.sub.b") == 2
-    assert _fetch(model, "$.table[option_a]") == 3.14
-    assert _fetch(model, "$.table_2[nominal, option_b]") == 0.8

@@ -83,7 +83,7 @@ def evaluate_project(project: Project, model_data: Mapping[str, BaseModel]) -> d
         elif isinstance(ppath.path, VerificationPath):
             verif_scope = project.scopes[ppath.scope]
             verif = verif_scope.verifications[ppath.path.verification_name]
-            input_values: dict[str, Any] = {}
+            input_values = {}
             for dep_name, dep_ppath in verif.dep_ppaths.items():
                 logger.debug(f"  Hydrating input '{dep_name}' from {dep_ppath}")
                 input_values[dep_name] = hydrate_value_by_leaf_values(

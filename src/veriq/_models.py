@@ -4,7 +4,7 @@ import inspect
 import logging
 from annotationlib import ForwardRef
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, get_args
+from typing import TYPE_CHECKING, Any, get_args
 
 from pydantic import BaseModel
 from scoped_context import NoContextError, ScopedContext
@@ -87,18 +87,24 @@ class Project:
                     current_type = current_type.evaluate()
                 match part:
                     case AttributePart(name):
+                        if not issubclass(current_type, BaseModel):
+                            msg = f"Type '{current_type}' is not a Pydantic model."
+                            raise TypeError(msg)
                         try:
                             field_info = current_type.model_fields[name]
                         except KeyError as e:
                             msg = f"Attribute '{name}' not found in model '{current_type.__name__}'."
                             raise KeyError(msg) from e
+                        if field_info.annotation is None:
+                            msg = f"Attribute '{name}' in model '{current_type.__name__}' has no type annotation."
+                            raise TypeError(msg)
                         current_type = field_info.annotation
                     case ItemPart(key):
                         args = get_args(current_type)
                         if len(args) != 2:
                             msg = f"Type '{current_type}' is not subscriptable with key '{key}'."
                             raise TypeError(msg)
-                        current_type = args[1]  # type: ignore[assignment]
+                        current_type = args[1]
                     case _:
                         msg = f"Unknown part type: {type(part)}"
                         raise TypeError(msg)
@@ -120,18 +126,24 @@ class Project:
                     current_type = current_type.evaluate()
                 match part:
                     case AttributePart(name):
+                        if not issubclass(current_type, BaseModel):
+                            msg = f"Type '{current_type}' is not a Pydantic model."
+                            raise TypeError(msg)
                         try:
                             field_info = current_type.model_fields[name]
                         except KeyError as e:
                             msg = f"Attribute '{name}' not found in model '{current_type.__name__}'."
                             raise KeyError(msg) from e
+                        if field_info.annotation is None:
+                            msg = f"Attribute '{name}' in model '{current_type.__name__}' has no type annotation."
+                            raise TypeError(msg)
                         current_type = field_info.annotation
                     case ItemPart(key):
                         args = get_args(current_type)
                         if len(args) != 2:
                             msg = f"Type '{current_type}' is not subscriptable with key '{key}'."
                             raise TypeError(msg)
-                        current_type = args[1]  # type: ignore[assignment]
+                        current_type = args[1]
                     case _:
                         msg = f"Unknown part type: {type(part)}"
                         raise TypeError(msg)
@@ -162,7 +174,7 @@ class Calculation[T, **P]:
     func: Callable[P, T] = field(repr=False)
     default_scope_name: str = field()
     imported_scope_names: list[str] = field(default_factory=list)
-    assumed_verifications: list[Verification] = field(default_factory=list)
+    assumed_verifications: list[Verification[...]] = field(default_factory=list)
 
     # Fields initialized in __post_init__
     dep_ppaths: dict[str, ProjectPath] = field(init=False)
@@ -200,7 +212,7 @@ class Verification[**P]:
     func: Callable[P, bool] = field(repr=False)  # TODO: disallow positional-only arguments
     default_scope_name: str = field()
     imported_scope_names: list[str] = field(default_factory=list)
-    assumed_verifications: list[Verification] = field(default_factory=list)
+    assumed_verifications: list[Verification[...]] = field(default_factory=list)
 
     # Fields initialized in __post_init__
     dep_ppaths: dict[str, ProjectPath] = field(init=False)
@@ -234,14 +246,14 @@ class Requirement(ScopedContext):
         try:
             current_requirement = Requirement.current()
         except NoContextError:
-            current_requirement = None
+            pass
         else:
             current_requirement.decomposed_requirements.append(self)
 
     id: str
     description: str
     decomposed_requirements: list[Requirement] = field(default_factory=list, repr=False)
-    verified_by: list[Verification] = field(default_factory=list, repr=False)
+    verified_by: list[Verification[...]] = field(default_factory=list, repr=False)
     depends_on: list[Requirement] = field(default_factory=list, repr=False)
 
     def iter_requirements(self, *, depth: int | None = None, leaf_only: bool = False) -> Iterable[Requirement]:
@@ -259,8 +271,8 @@ class Scope:
     name: str
     _root_model: type[BaseModel] | None = field(default=None)
     _requirements: dict[str, Requirement] = field(default_factory=dict)
-    _verifications: dict[str, Verification] = field(default_factory=dict)
-    _calculations: dict[str, Calculation] = field(default_factory=dict)
+    _verifications: dict[str, Verification[...]] = field(default_factory=dict)
+    _calculations: dict[str, Calculation[Any, ...]] = field(default_factory=dict)
 
     @property
     def requirements(self) -> dict[str, Requirement]:
@@ -268,12 +280,12 @@ class Scope:
         return self._requirements
 
     @property
-    def verifications(self) -> dict[str, Verification]:
+    def verifications(self) -> dict[str, Verification[...]]:
         """Get all verifications in the scope."""
         return self._verifications
 
     @property
-    def calculations(self) -> dict[str, Calculation]:
+    def calculations(self) -> dict[str, Calculation[Any, ...]]:
         """Get all calculations in the scope."""
         return self._calculations
 
@@ -289,10 +301,14 @@ class Scope:
 
         return decorator
 
-    def verification(self, name: str | None = None, imports: Iterable[str] = ()) -> Callable[[Callable], Verification]:
+    def verification[**P](
+        self,
+        name: str | None = None,
+        imports: Iterable[str] = (),
+    ) -> Callable[[Callable[P, bool]], Verification[P]]:
         """Decorator to mark a function as a verification in the scope."""
 
-        def decorator(func: Callable) -> Verification:
+        def decorator(func: Callable[P, bool]) -> Verification[P]:
             if name is None:
                 if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
                     msg = "Function must have a valid name."
@@ -301,7 +317,7 @@ class Scope:
             else:
                 verification_name = name
 
-            assumed_verifications: list[Verification] = []
+            assumed_verifications: list[Verification[...]] = []
             if hasattr(func, "__veriq_assumed_verifications__"):
                 assumed_verifications = func.__veriq_assumed_verifications__
 
@@ -320,10 +336,14 @@ class Scope:
 
         return decorator
 
-    def calculation(self, name: str | None = None, imports: Iterable[str] = ()) -> Callable[[Callable], Calculation]:
+    def calculation[T, **P](
+        self,
+        name: str | None = None,
+        imports: Iterable[str] = (),
+    ) -> Callable[[Callable[P, T]], Calculation[T, P]]:
         """Decorator to mark a function as a calculation in the scope."""
 
-        def decorator(func: Callable) -> Calculation:
+        def decorator(func: Callable[P, T]) -> Calculation[T, P]:
             if name is None:
                 if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
                     msg = "Function must have a valid name."
@@ -332,7 +352,7 @@ class Scope:
             else:
                 calculation_name = name
 
-            assumed_verifications: list[Verification] = []
+            assumed_verifications: list[Verification[...]] = []
             if hasattr(func, "__veriq_assumed_verifications__"):
                 assumed_verifications = func.__veriq_assumed_verifications__
 
@@ -351,7 +371,7 @@ class Scope:
 
         return decorator
 
-    def requirement(self, id_: str, /, description: str, verified_by: Iterable[Verification] = ()) -> Requirement:
+    def requirement(self, id_: str, /, description: str, verified_by: Iterable[Verification[...]] = ()) -> Requirement:
         """Create and add a requirement to the scope."""
         requirement = Requirement(description=description, verified_by=list(verified_by), id=id_)
         if id_ in self._requirements:

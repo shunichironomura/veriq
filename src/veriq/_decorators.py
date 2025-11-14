@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from ._models import Verification
 
 
-def assume[T, **P](verification: Verification) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def assume[T, **P](verification: Verification[...]) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator to mark that a calculation assumes a verification."""
 
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
@@ -14,8 +14,8 @@ def assume[T, **P](verification: Verification) -> Callable[[Callable[P, T]], Cal
         # but this is a simple way to attach metadata.
         # In the future, we might implement a builder class for calculations/verifications.
         if not hasattr(func, "__veriq_assumed_verifications__"):
-            func.__veriq_assumed_verifications__ = []
-        func.__veriq_assumed_verifications__.append(verification)
+            func.__veriq_assumed_verifications__ = []  # type: ignore[attr-defined]
+        func.__veriq_assumed_verifications__.append(verification)  # type: ignore[attr-defined]
         return func
 
     return decorator

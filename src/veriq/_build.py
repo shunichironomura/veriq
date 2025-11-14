@@ -24,6 +24,7 @@ def build_dependencies_graph(project: Project) -> DepencenciesGraph:  # noqa: PL
                 dep_type = project.get_type(dep_ppath)
                 for src_leaf_parts in iter_leaf_path_parts(dep_type):
                     src_leaf_abs_parts = dep_ppath.path.parts + src_leaf_parts
+                    src_leaf_path: ModelPath | CalcPath
                     if isinstance(dep_ppath.path, ModelPath):
                         src_leaf_path = ModelPath(root="$", parts=src_leaf_abs_parts)
                     elif isinstance(dep_ppath.path, CalcPath):
