@@ -1,14 +1,20 @@
 """Requirements verification tool."""
 
 __all__ = [
-    "Depends",
+    "Project",
+    "Ref",
     "Requirement",
     "Scope",
-    "calculation",
+    "Table",
+    "assume",
+    "build_dependencies_graph",
     "depends",
-    "verification",
+    "evaluate_project",
 ]
 
-from ._decorators import calculation, verification
-from ._models import Depends, Requirement, Scope
+from ._build import build_dependencies_graph
+from ._decorators import assume
+from ._eval import evaluate_project
+from ._models import Project, Ref, Requirement, Scope
 from ._relations import depends
+from ._table import Table

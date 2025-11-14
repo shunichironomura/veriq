@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import inspect
 import logging
+from annotationlib import ForwardRef
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Self, get_args
+from typing import TYPE_CHECKING, Any, get_args
 
-from pydantic import BaseModel, create_model
-from scoped_context import NoContextError, ScopedContext, get_current_context
+from pydantic import BaseModel
+from scoped_context import NoContextError, ScopedContext
 from typing_extensions import _AnnotatedAlias
 
-from ._utils import model_to_flat_dict
+from ._path import AttributePart, CalcPath, ItemPart, ModelPath, ProjectPath, VerificationPath, parse_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -17,98 +18,239 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def get_deps_from_signature(sig: inspect.Signature) -> dict[str, Depends]:
-    """Extract model types from the function signature."""
+def _get_dep_refs_from_signature(sig: inspect.Signature) -> dict[str, Ref]:
+    """Extract Calc or Fetch annotation from the function signature."""
 
-    def _get_dep_from_annotation(
+    def _get_dep_ref_from_annotation(
+        name: str,
         annotations: _AnnotatedAlias,
-    ) -> Depends | None:
+    ) -> Ref | None:
         args = get_args(annotations)
         try:
-            return next(iter(arg for arg in args if isinstance(arg, Depends)))
+            return next(iter(arg for arg in args if isinstance(arg, Ref)))
         except StopIteration:
-            return None
+            msg = f"Parameter '{name}' must be annotated with Fetch or Calc."
+            raise TypeError(msg) from None
 
     return {
         param.name: dep
         for param in sig.parameters.values()
-        if (dep := _get_dep_from_annotation(param.annotation)) is not None
+        if (dep := _get_dep_ref_from_annotation(param.name, param.annotation)) is not None
     }
 
 
-def get_models_from_signature(
-    sig: inspect.Signature,
-) -> dict[str, type[BaseModel]]:
-    """Extract model types from the function signature."""
-    return {
-        param.name: param.annotation
-        for param in sig.parameters.values()
-        if isinstance(param.annotation, type) and issubclass(param.annotation, BaseModel)
-    }
+def _get_return_type_from_signature(sig: inspect.Signature) -> type:
+    """Extract return type from the function signature."""
+    return_annotation = sig.return_annotation
+    if return_annotation is inspect.Signature.empty:
+        msg = "Function must have a return type annotation."
+        raise TypeError(msg)
+    if isinstance(return_annotation, type):
+        return return_annotation
+    msg = "Return type must be a type."
+    raise TypeError(msg)
 
 
-@dataclass
+@dataclass(slots=True)
+class Project:
+    """A class to hold the scopes."""
+
+    name: str
+    _scopes: dict[str, Scope] = field(default_factory=dict)
+
+    def add_scope(self, scope: Scope) -> None:
+        """Add a scope to the project."""
+        if scope.name in self._scopes:
+            msg = f"Scope with name '{scope.name}' already exists in the project."
+            raise KeyError(msg)
+        self._scopes[scope.name] = scope
+
+    @property
+    def scopes(self) -> dict[str, Scope]:
+        """Get all scopes in the project."""
+        return self._scopes
+
+    def get_type(self, ppath: ProjectPath) -> type:  # noqa: C901,PLR0915,PLR0912
+        """Get the type of the given project path."""
+        scope = self._scopes.get(ppath.scope)
+        if scope is None:
+            msg = f"Scope '{ppath.scope}' not found in project '{self.name}'."
+            raise KeyError(msg)
+
+        if isinstance(ppath.path, ModelPath):
+            current_type: type = scope.get_root_model()  # type: ignore[assignment]
+            for part in ppath.path.parts:
+                if isinstance(current_type, ForwardRef):
+                    current_type = current_type.evaluate()
+                match part:
+                    case AttributePart(name):
+                        if not issubclass(current_type, BaseModel):
+                            msg = f"Type '{current_type}' is not a Pydantic model."
+                            raise TypeError(msg)
+                        try:
+                            field_info = current_type.model_fields[name]
+                        except KeyError as e:
+                            msg = f"Attribute '{name}' not found in model '{current_type.__name__}'."
+                            raise KeyError(msg) from e
+                        if field_info.annotation is None:
+                            msg = f"Attribute '{name}' in model '{current_type.__name__}' has no type annotation."
+                            raise TypeError(msg)
+                        current_type = field_info.annotation
+                    case ItemPart(key):
+                        args = get_args(current_type)
+                        if len(args) != 2:
+                            msg = f"Type '{current_type}' is not subscriptable with key '{key}'."
+                            raise TypeError(msg)
+                        current_type = args[1]
+                    case _:
+                        msg = f"Unknown part type: {type(part)}"
+                        raise TypeError(msg)
+
+            if isinstance(current_type, ForwardRef):
+                current_type = current_type.evaluate()
+
+            return current_type
+
+        if isinstance(ppath.path, CalcPath):
+            calc_name = ppath.path.root.lstrip(ppath.path.PREFIX)
+            calculation = scope.calculations.get(calc_name)
+            if calculation is None:
+                msg = f"Calculation '{calc_name}' not found in scope '{scope.name}'."
+                raise KeyError(msg)
+            current_type = calculation.output_type
+            for part in ppath.path.parts:
+                if isinstance(current_type, ForwardRef):
+                    current_type = current_type.evaluate()
+                match part:
+                    case AttributePart(name):
+                        if not issubclass(current_type, BaseModel):
+                            msg = f"Type '{current_type}' is not a Pydantic model."
+                            raise TypeError(msg)
+                        try:
+                            field_info = current_type.model_fields[name]
+                        except KeyError as e:
+                            msg = f"Attribute '{name}' not found in model '{current_type.__name__}'."
+                            raise KeyError(msg) from e
+                        if field_info.annotation is None:
+                            msg = f"Attribute '{name}' in model '{current_type.__name__}' has no type annotation."
+                            raise TypeError(msg)
+                        current_type = field_info.annotation
+                    case ItemPart(key):
+                        args = get_args(current_type)
+                        if len(args) != 2:
+                            msg = f"Type '{current_type}' is not subscriptable with key '{key}'."
+                            raise TypeError(msg)
+                        current_type = args[1]
+                    case _:
+                        msg = f"Unknown part type: {type(part)}"
+                        raise TypeError(msg)
+            if isinstance(current_type, ForwardRef):
+                current_type = current_type.evaluate()
+            return current_type
+
+        if isinstance(ppath.path, VerificationPath):
+            return bool
+
+        msg = f"Unsupported path type: {ppath.path.__class__.__name__}"
+        raise TypeError(msg)
+
+
+@dataclass(slots=True)
+class Ref:
+    """Reference to a project path."""
+
+    path: str
+    scope: str | None = None
+
+
+@dataclass(slots=True)
 class Calculation[T, **P]:
     """A class to represent a calculation in the verification process."""
 
     name: str
-    func: Callable[P, T]
-    model_deps: dict[str, type[BaseModel]] = field(default_factory=dict, repr=False)
-    calc_deps: dict[str, Depends] = field(default_factory=dict, repr=False)
+    func: Callable[P, T] = field(repr=False)
+    default_scope_name: str = field()
+    imported_scope_names: list[str] = field(default_factory=list)
+    assumed_verifications: list[Verification[...]] = field(default_factory=list)
+
+    # Fields initialized in __post_init__
+    dep_ppaths: dict[str, ProjectPath] = field(init=False)
+    output_type: type[T] = field(init=False)
+
+    def __post_init__(self) -> None:
+        sig = inspect.signature(self.func)
+        dep_refs = _get_dep_refs_from_signature(sig)
+
+        def ref_to_project_path(ref: Ref) -> ProjectPath:
+            scope_name = self.default_scope_name if ref.scope is None else ref.scope
+            return ProjectPath(scope=scope_name, path=parse_path(ref.path))
+
+        for dep_name, dep_ref in dep_refs.items():
+            if dep_ref.scope is None:
+                dep_ref.scope = self.default_scope_name
+            if dep_ref.scope != self.default_scope_name and dep_ref.scope not in self.imported_scope_names:
+                msg = (
+                    f"Dependency '{dep_name}' is from scope '{dep_ref.scope}',"
+                    f" which is not imported in calculation '{self.name}'."
+                )
+                raise ValueError(msg)
+        self.dep_ppaths = {name: ref_to_project_path(ref) for name, ref in dep_refs.items()}
+        self.output_type = _get_return_type_from_signature(sig)
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
         return self.func(*args, **kwargs)
 
-    def iter_all_model_deps(self) -> Iterable[type[BaseModel]]:
-        """Iterate over all model dependencies."""
-        yield from self.model_deps.values()
-        for calc_dep in self.calc_deps.values():
-            yield from calc_dep.calculation.iter_all_model_deps()
 
-    def eval(self, design: dict[str, BaseModel]) -> T:
-        """Evaluate the calculation against a design."""
-        model_args = {name: design[model.__name__] for name, model in self.model_deps.items()}
-        calc_args = {name: calc_dep.calculation.eval(design) for name, calc_dep in self.calc_deps.items()}
-        return self.func(**model_args, **calc_args)  # type: ignore[call-arg,arg-type]
-
-
-@dataclass
+@dataclass(slots=True)
 class Verification[**P]:
     """A class to represent a verification in the verification process."""
 
     name: str
     func: Callable[P, bool] = field(repr=False)  # TODO: disallow positional-only arguments
-    model_deps: dict[str, type[BaseModel]] = field(default_factory=dict, repr=False)
-    calc_deps: dict[str, Depends] = field(default_factory=dict, repr=False)
+    default_scope_name: str = field()
+    imported_scope_names: list[str] = field(default_factory=list)
+    assumed_verifications: list[Verification[...]] = field(default_factory=list)
+
+    # Fields initialized in __post_init__
+    dep_ppaths: dict[str, ProjectPath] = field(init=False)
+
+    def __post_init__(self) -> None:
+        sig = inspect.signature(self.func)
+        dep_refs = _get_dep_refs_from_signature(sig)
+
+        def ref_to_project_path(ref: Ref) -> ProjectPath:
+            scope_name = self.default_scope_name if ref.scope is None else ref.scope
+            return ProjectPath(scope=scope_name, path=parse_path(ref.path))
+
+        for dep_name, dep_ref in dep_refs.items():
+            if dep_ref.scope is None:
+                dep_ref.scope = self.default_scope_name
+            if dep_ref.scope != self.default_scope_name and dep_ref.scope not in self.imported_scope_names:
+                msg = (
+                    f"Dependency '{dep_name}' is from scope '{dep_ref.scope}',"
+                    f" which is not imported in verification '{self.name}'."
+                )
+                raise ValueError(msg)
+        self.dep_ppaths = {name: ref_to_project_path(ref) for name, ref in dep_refs.items()}
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> bool:
         return self.func(*args, **kwargs)
 
-    def iter_all_model_deps(self) -> Iterable[type[BaseModel]]:
-        """Iterate over all model dependencies."""
-        yield from self.model_deps.values()
-        for calc_dep in self.calc_deps.values():
-            yield from calc_dep.calculation.iter_all_model_deps()
 
-    def eval(self, design: dict[str, BaseModel]) -> bool:
-        """Evaluate the verification against a design."""
-        model_args = {name: design[model.__name__] for name, model in self.model_deps.items()}
-        calc_args = {name: calc_dep.calculation.eval(design) for name, calc_dep in self.calc_deps.items()}
-        return self.func(**model_args, **calc_args)  # type: ignore[call-arg,arg-type]
-
-
-@dataclass
+@dataclass(slots=True)
 class Requirement(ScopedContext):
     def __post_init__(self) -> None:
-        current_scope_or_requirement = get_current_context((Scope, Requirement))
-        if isinstance(current_scope_or_requirement, Scope):
-            current_scope_or_requirement.add_requirement(self)
-        elif isinstance(current_scope_or_requirement, Requirement):
-            current_scope_or_requirement.decomposed_requirements.append(self)
+        try:
+            current_requirement = Requirement.current()
+        except NoContextError:
+            pass
+        else:
+            current_requirement.decomposed_requirements.append(self)
 
+    id: str
     description: str
     decomposed_requirements: list[Requirement] = field(default_factory=list, repr=False)
-    verified_by: Verification[...] | None = None
+    verified_by: list[Verification[...]] = field(default_factory=list, repr=False)
     depends_on: list[Requirement] = field(default_factory=list, repr=False)
 
     def iter_requirements(self, *, depth: int | None = None, leaf_only: bool = False) -> Iterable[Requirement]:
@@ -120,173 +262,133 @@ class Requirement(ScopedContext):
         for req in self.decomposed_requirements:
             yield from req.iter_requirements(depth=depth - 1 if depth is not None else None, leaf_only=leaf_only)
 
-    def __enter__(self) -> Self:
-        super().__enter__()
-        logger.debug(f"Entering requirement: {self.description}")
-        current_scope = Scope.current()
-        logger.debug(f"Current scope: {current_scope.name}")
-        try:
-            next(iter(req for _, req in current_scope.iter_requirements(include_child_scopes=False) if req == self))
 
-        except StopIteration:
-            msg = f"The entered requirement '{self.description}' doesn't belong to the current scope."
-            raise RuntimeError(msg) from None
-
-        return self
-
-
-@dataclass
-class ModelCompatibility[MA: BaseModel, MB: BaseModel]:
-    """A class to represent model compatibility in the verification process."""
-
-    model_a: type[MA]
-    model_b: type[MB]
-    func: Callable[[MA, MB], bool] = field(repr=False)
-
-
-@dataclass
-class Scope(ScopedContext):
+@dataclass(slots=True)
+class Scope:
     name: str
-    requirements: list[Requirement] = field(default_factory=list)
-    child_scopes: list[Scope] = field(default_factory=list)
-    model_compatibilities: list[ModelCompatibility[Any, Any]] = field(default_factory=list)
+    _root_model: type[BaseModel] | None = field(default=None)
+    _requirements: dict[str, Requirement] = field(default_factory=dict)
+    _verifications: dict[str, Verification[...]] = field(default_factory=dict)
+    _calculations: dict[str, Calculation[Any, ...]] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
+    @property
+    def get_root_model(self) -> type[BaseModel]:
+        """Get the root model of the scope."""
+        if self._root_model is None:
+            msg = f"Scope '{self.name}' does not have a root model defined."
+            raise RuntimeError(msg)
+        return self._root_model
+
+    @property
+    def requirements(self) -> dict[str, Requirement]:
+        """Get all requirements in the scope."""
+        return self._requirements
+
+    @property
+    def verifications(self) -> dict[str, Verification[...]]:
+        """Get all verifications in the scope."""
+        return self._verifications
+
+    @property
+    def calculations(self) -> dict[str, Calculation[Any, ...]]:
+        """Get all calculations in the scope."""
+        return self._calculations
+
+    def root_model[M: type[BaseModel]](self) -> Callable[[M], M]:
+        """Decorator to mark a model as the root model of the scope."""
+
+        def decorator(model: M) -> M:
+            if self._root_model is not None:
+                msg = f"Scope '{self.name}' already has a root model assigned: {self._root_model.__name__}"
+                raise RuntimeError(msg)
+            self._root_model = model
+            return model
+
+        return decorator
+
+    def verification[**P](
+        self,
+        name: str | None = None,
+        imports: Iterable[str] = (),
+    ) -> Callable[[Callable[P, bool]], Verification[P]]:
+        """Decorator to mark a function as a verification in the scope."""
+
+        def decorator(func: Callable[P, bool]) -> Verification[P]:
+            if name is None:
+                if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
+                    msg = "Function must have a valid name."
+                    raise TypeError(msg)
+                verification_name = func.__name__
+            else:
+                verification_name = name
+
+            assumed_verifications: list[Verification[...]] = []
+            if hasattr(func, "__veriq_assumed_verifications__"):
+                assumed_verifications = func.__veriq_assumed_verifications__
+
+            verification = Verification(
+                name=verification_name,
+                func=func,
+                imported_scope_names=list(imports),
+                assumed_verifications=assumed_verifications,
+                default_scope_name=self.name,
+            )
+            if verification_name in self._verifications:
+                msg = f"Verification with name '{verification_name}' already exists in scope '{self.name}'."
+                raise KeyError(msg)
+            self._verifications[verification_name] = verification
+            return verification
+
+        return decorator
+
+    def calculation[T, **P](
+        self,
+        name: str | None = None,
+        imports: Iterable[str] = (),
+    ) -> Callable[[Callable[P, T]], Calculation[T, P]]:
+        """Decorator to mark a function as a calculation in the scope."""
+
+        def decorator(func: Callable[P, T]) -> Calculation[T, P]:
+            if name is None:
+                if not hasattr(func, "__name__") or not isinstance(func.__name__, str):
+                    msg = "Function must have a valid name."
+                    raise TypeError(msg)
+                calculation_name = func.__name__
+            else:
+                calculation_name = name
+
+            assumed_verifications: list[Verification[...]] = []
+            if hasattr(func, "__veriq_assumed_verifications__"):
+                assumed_verifications = func.__veriq_assumed_verifications__
+
+            calculation = Calculation(
+                name=calculation_name,
+                func=func,
+                imported_scope_names=list(imports),
+                assumed_verifications=assumed_verifications,
+                default_scope_name=self.name,
+            )
+            if calculation_name in self._calculations:
+                msg = f"Calculation with name '{calculation_name}' already exists in scope '{self.name}'."
+                raise KeyError(msg)
+            self._calculations[calculation_name] = calculation
+            return calculation
+
+        return decorator
+
+    def requirement(self, id_: str, /, description: str, verified_by: Iterable[Verification[...]] = ()) -> Requirement:
+        """Create and add a requirement to the scope."""
+        requirement = Requirement(description=description, verified_by=list(verified_by), id=id_)
+        if id_ in self._requirements:
+            msg = f"Requirement with ID '{id_}' already exists in scope '{self.name}'."
+            raise KeyError(msg)
+        self._requirements[id_] = requirement
+        return requirement
+
+    def fetch_requirement(self, id_: str, /) -> Requirement:
+        """Fetch a requirement by its ID."""
         try:
-            parent_scope = Scope.current()
-        except NoContextError:
-            pass
-        else:
-            parent_scope.child_scopes.append(self)
-
-    def iter_requirements(
-        self,
-        *,
-        depth: int | None = None,
-        include_child_scopes: bool = False,
-        leaf_only: bool = False,
-    ) -> Iterable[tuple[tuple[str, ...], Requirement]]:
-        """Iterate over requirements in the scope."""
-        for req in self.requirements:
-            for req_ in req.iter_requirements(depth=depth, leaf_only=leaf_only):
-                yield (self.name,), req_
-        if include_child_scopes:
-            for child_scope in self.child_scopes:
-                for path, req in child_scope.iter_requirements(depth=depth, leaf_only=leaf_only):
-                    yield (self.name, *path), req
-
-    def iter_verifications(
-        self,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> Iterable[tuple[tuple[str, ...], Verification[...]]]:
-        """Iterate over verifications in the scope."""
-        # TODO: If multiple requirements are verified by the same verification instance,
-        # the verification is now yielded more than once.
-        for path, req in self.iter_requirements(include_child_scopes=include_child_scopes, leaf_only=leaf_only):
-            if req.verified_by:
-                yield (path, req.verified_by)
-
-    def iter_models(
-        self,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> Iterable[tuple[tuple[str, ...], type[BaseModel]]]:
-        """Iterate over models in the scope."""
-        for path, verification in self.iter_verifications(
-            include_child_scopes=include_child_scopes,
-            leaf_only=leaf_only,
-        ):
-            for model in verification.iter_all_model_deps():
-                yield (path, model)
-
-    def add_requirement(self, requirement: Requirement) -> None:
-        """Add a requirement to the scope."""
-        self.requirements.append(requirement)
-
-    def model_compatibility[MA: BaseModel, MB: BaseModel](
-        self,
-        func: Callable[[MA, MB], bool],
-        /,
-    ) -> Callable[[MA, MB], bool]:
-        """Decorator to mark a function as a model compatibility check."""
-        sig = inspect.signature(func)
-        model_a, model_b = tuple(
-            param.annotation
-            for param in sig.parameters.values()
-            if isinstance(param.annotation, type) and issubclass(param.annotation, BaseModel)
-        )
-
-        compatibility = ModelCompatibility(model_a=model_a, model_b=model_b, func=func)  # type: ignore[arg-type]
-        self.model_compatibilities.append(compatibility)
-        return func
-
-    def design_json_schema(
-        self,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> dict[str, Any]:
-        """Get the schema of models in the scope."""
-        design_model = self.design_model(
-            include_child_scopes=include_child_scopes,
-            leaf_only=leaf_only,
-        )
-        return design_model.model_json_schema()
-
-    def design_model(self, *, include_child_scopes: bool = False, leaf_only: bool = True) -> type[BaseModel]:
-        """Get the design model for the scope."""
-        fields = {
-            model.__name__: model for _, model in self.iter_models(include_child_scopes=False, leaf_only=leaf_only)
-        }
-        if include_child_scopes:
-            fields |= {
-                child_scope.name: child_scope.design_model(
-                    include_child_scopes=include_child_scopes,
-                    leaf_only=leaf_only,
-                )
-                for child_scope in self.child_scopes
-            }
-
-        return create_model(  # type: ignore[no-any-return, call-overload]
-            f"{self.name}",
-            **fields,
-        )
-
-    def verify_design(
-        self,
-        design: dict[str, BaseModel] | BaseModel,
-        *,
-        include_child_scopes: bool = False,
-        leaf_only: bool = True,
-    ) -> bool:
-        """Verify the design against the scope's requirements."""
-        # TODO: Return more detailed verification results.
-        fields_in_current_scope = {
-            model.__name__ for _, model in self.iter_models(include_child_scopes=False, leaf_only=leaf_only)
-        }
-        design_dict_full = design if isinstance(design, dict) else model_to_flat_dict(design)
-        design_dict = {k: v for k, v in design_dict_full.items() if k in fields_in_current_scope}
-        for _, verification in self.iter_verifications(include_child_scopes=False, leaf_only=leaf_only):
-            if not verification.eval(design_dict):
-                return False
-
-        if include_child_scopes:
-            for child_scope in self.child_scopes:
-                if not child_scope.verify_design(
-                    design_dict_full[child_scope.name],
-                    include_child_scopes=include_child_scopes,
-                    leaf_only=leaf_only,
-                ):
-                    return False
-
-        return True
-
-
-@dataclass
-class Depends:
-    """A class to represent dependencies between calculations and verifications."""
-
-    calculation: Calculation[Any, ...]
+            return self._requirements[id_]
+        except KeyError as e:
+            msg = f"Requirement with ID '{id_}' not found in scope '{self.name}'."
+            raise KeyError(msg) from e

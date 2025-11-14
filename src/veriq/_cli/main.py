@@ -3,8 +3,7 @@ import json
 import logging
 import sys
 import tomllib
-from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import typer
 
@@ -12,6 +11,8 @@ from veriq._models import Scope
 
 from .discover import get_import_data
 
+if TYPE_CHECKING:
+    from pathlib import Path
 app = typer.Typer()
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ def schema(
         typer.Option(help="Path to the output file for the generated schema."),
     ] = None,
 ) -> NoReturn:
+    msg = "The 'veriq schema' command is removed."
+    raise NotImplementedError(msg)
     logger.info("Generating schema...")
     import_data = get_import_data(path=path, scope_name=scope_name)
     logger.debug(f"Importing from {import_data.module_data.extra_sys_path}")
@@ -101,6 +104,8 @@ def verify(
         typer.Option(help="Include only leaf scopes in the generated schema."),
     ] = False,
 ) -> NoReturn:
+    msg = "The 'veriq verify' command is removed."
+    raise NotImplementedError(msg)
     logger.info("Generating schema...")
     import_data = get_import_data(path=path, scope_name=scope_name)
     logger.debug(f"Importing from {import_data.module_data.extra_sys_path}")
