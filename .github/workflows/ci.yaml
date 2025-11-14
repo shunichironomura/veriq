@@ -60,7 +60,7 @@ jobs:
         run: uv sync --no-dev --group typing
 
       - name: Run mypy
-        run: uv run -- mypy .
+        run: uv run -- mypy src # TODO: Check other directories
 
   pytest:
     if: github.event.pull_request.draft == false

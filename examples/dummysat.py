@@ -53,7 +53,7 @@ class ReactionWheelAssemblyModel(BaseModel):
     wheel_z: ReactionWheelModel
 
     # required by PowerInterface
-    # power_consumption: vq.Table[OperationMode, float]
+    power_consumption: vq.Table[OperationMode, float]
 
     # required by StructuralInterface
     mass: float
@@ -206,13 +206,13 @@ result = vq.evaluate_project(
             wheel_x=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
             wheel_y=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
             wheel_z=ReactionWheelModel(max_torque=0.1, power_consumption=5.0, mass=2.0),
-            # power_consumption=vq.Table(
-            #     {
-            #         OperationMode.NOMINAL: 15.0,
-            #         OperationMode.SAFE: 5.0,
-            #         OperationMode.MISSION: 10.0,
-            #     },
-            # ),
+            power_consumption=vq.Table(
+                {
+                    OperationMode.NOMINAL: 15.0,
+                    OperationMode.SAFE: 5.0,
+                    OperationMode.MISSION: 10.0,
+                },
+            ),
             mass=6.0,
         ),
         "Power": PowerSubsystemModel(

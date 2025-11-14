@@ -78,7 +78,7 @@ class Project:
             raise KeyError(msg)
 
         if isinstance(ppath.path, ModelPath):
-            current_type: type = scope.get_root_model()  # type: ignore[assignment]
+            current_type: type = scope.get_root_model()
             for part in ppath.path.parts:
                 if isinstance(current_type, ForwardRef):
                     current_type = current_type.evaluate()
@@ -271,7 +271,6 @@ class Scope:
     _verifications: dict[str, Verification[...]] = field(default_factory=dict)
     _calculations: dict[str, Calculation[Any, ...]] = field(default_factory=dict)
 
-    @property
     def get_root_model(self) -> type[BaseModel]:
         """Get the root model of the scope."""
         if self._root_model is None:
