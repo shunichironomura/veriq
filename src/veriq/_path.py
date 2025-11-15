@@ -1,8 +1,10 @@
 import logging
 from annotationlib import ForwardRef
 from dataclasses import dataclass, field
+from enum import StrEnum
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, ClassVar, Self
+from itertools import product
+from typing import TYPE_CHECKING, Any, ClassVar, Self, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -164,7 +166,7 @@ class ProjectPath:
         return f"{self.scope}::{self.path}"
 
 
-def iter_leaf_path_parts(
+def iter_leaf_path_parts(  # noqa: PLR0912, C901
     model: Any,
     *,
     _current_path_parts: tuple[PartBase, ...] = (),
@@ -172,15 +174,45 @@ def iter_leaf_path_parts(
     if isinstance(model, ForwardRef):
         model = model.evaluate()
 
+    # Handle generic aliases (e.g., Table[Option, float])
+    origin = get_origin(model)
+    if (origin is not None and origin is Table) or (isclass(origin) and issubclass(origin, Table)):
+        # Extract type arguments from the generic Table
+        type_args = get_args(model)
+        if len(type_args) == 2:
+            key_type_arg, _value_type_arg = type_args
+
+            # Determine the actual enum type(s)
+            key_type_args = get_args(key_type_arg)
+            enum_types = key_type_args if key_type_args else (key_type_arg,)
+
+            # Generate expected keys based on enum types
+            if len(enum_types) == 1:
+                # Single StrEnum key
+                enum_type = enum_types[0]
+                if isclass(enum_type) and issubclass(enum_type, StrEnum):
+                    for enum_value in enum_type:
+                        yield (
+                            *_current_path_parts,
+                            ItemPart(key=enum_value.value),
+                        )
+            # Tuple of StrEnum keys
+            elif all(isclass(et) and issubclass(et, StrEnum) for et in enum_types):
+                for values in product(*(list(et) for et in enum_types)):
+                    key = ",".join(v.value for v in values)
+                    yield (
+                        *_current_path_parts,
+                        ItemPart(key=key),
+                    )
+        return
+
     if not isclass(model):
         yield _current_path_parts
         return
     if issubclass(model, Table):
-        for key in model.expected_keys:  # type: ignore[attr-defined]
-            yield (
-                *_current_path_parts,
-                ItemPart(key=key),
-            )
+        # This branch handles non-generic Table classes (shouldn't normally happen)
+        # For a properly parameterized Table, we handle it above
+        yield _current_path_parts
         return
     if not issubclass(model, BaseModel):
         yield _current_path_parts
@@ -212,7 +244,44 @@ def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
     return current
 
 
-def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[PartBase, ...], Any]) -> T:  # noqa: PLR0912, C901
+def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[PartBase, ...], Any]) -> T:  # noqa: PLR0912, C901, PLR0915
+    # Handle generic Table types (e.g., Table[Option, float])
+    origin = get_origin(model)
+    if origin is not None and (origin is Table or (isclass(origin) and issubclass(origin, Table))):
+        # Extract type arguments to get the key type
+        type_args = get_args(model)
+        if len(type_args) == 2:
+            key_type_arg, _value_type_arg = type_args
+
+            # Determine the actual enum type(s)
+            key_type_args = get_args(key_type_arg)
+            enum_types = key_type_args if key_type_args else (key_type_arg,)
+
+            table_mapping = {}
+            for parts, value in leaf_values.items():
+                key_part = parts[0]
+                if not isinstance(key_part, ItemPart):
+                    msg = f"Expected ItemPart for Table key, got: {type(key_part)}"
+                    raise TypeError(msg)
+                str_key = key_part.key
+
+                # Deserialize the key based on whether it's a tuple or single enum
+                if len(enum_types) == 1:
+                    # Single StrEnum key
+                    enum_type = enum_types[0]
+                    key = enum_type(str_key)
+                else:
+                    # Tuple of StrEnum keys
+                    parts_str = str_key.split(",") if isinstance(str_key, str) else str_key
+                    if isinstance(parts_str, str):
+                        parts_str = [parts_str]
+                    key = tuple(enum_type(part) for enum_type, part in zip(enum_types, parts_str, strict=True))
+
+                table_mapping[key] = value
+            return origin(table_mapping)  # type: ignore[no-any-return]
+        msg = f"Table type must have exactly 2 type arguments, got {len(type_args)}"
+        raise TypeError(msg)
+
     if isclass(model) and issubclass(model, Table):
         table_mapping = {}
         for parts, value in leaf_values.items():

@@ -50,7 +50,7 @@ def _get_return_type_from_signature(sig: inspect.Signature) -> type:
     # Handle generic aliases like Table[K, V]
     origin = get_origin(return_annotation)
     if origin is not None and isinstance(origin, type):
-        return origin
+        return origin  # type: ignore[no-any-return]
     msg = "Return type must be a type."
     raise TypeError(msg)
 
