@@ -177,6 +177,9 @@ def iter_leaf_path_parts(  # noqa: PLR0912, C901
     # Handle generic aliases (e.g., Table[Option, float])
     origin = get_origin(model)
     if (origin is not None and origin is Table) or (isclass(origin) and issubclass(origin, Table)):
+        # Yield the whole table first
+        yield _current_path_parts
+
         # Extract type arguments from the generic Table
         type_args = get_args(model)
         if len(type_args) == 2:
@@ -245,6 +248,11 @@ def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
 
 
 def hydrate_value_by_leaf_values[T](model: type[T], leaf_values: Mapping[tuple[PartBase, ...], Any]) -> T:  # noqa: PLR0912, C901, PLR0915
+    # If there's a value at the empty path (), it represents the complete object
+    # This happens when we store both the whole Table and individual items
+    if () in leaf_values:
+        return leaf_values[()]  # type: ignore[no-any-return]
+
     # Handle generic Table types (e.g., Table[Option, float])
     origin = get_origin(model)
     if origin is not None and (origin is Table or (isclass(origin) and issubclass(origin, Table))):
