@@ -454,3 +454,7 @@ Contributions are welcome! Please note that this project is in early development
 ## License
 
 MIT License
+
+## Acknowledgement
+
+veriq originated in the `shunichironomura/veriq` repository, and its early development up to version v0.0.1 was supported by ArkEdge Space Inc.
