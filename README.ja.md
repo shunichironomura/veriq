@@ -452,3 +452,7 @@ veriq --verbose calc my_satellite.py -i input.toml -o output.toml
 ## ライセンス
 
 MIT License
+
+## 謝辞
+
+veriq は `shunichironomura/veriq` リポジトリで開発が始まり、v0.0.1 までの初期開発は ArkEdge Space Inc. の支援を受けて進められました。
