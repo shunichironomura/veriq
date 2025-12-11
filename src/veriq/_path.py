@@ -240,6 +240,21 @@ def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
             case AttributePart(name):
                 current = getattr(current, name)
             case ItemPart(key):
+                # If accessing a Table, convert string key(s) to enum(s)
+                if isinstance(current, Table):
+                    key_type = current.key_type
+                    # Check if the key type is tuple (for multi-enum keys)
+                    if key_type is tuple:
+                        # Tuple key - get the enum types from the key sample
+                        key_sample = next(iter(current.keys()))
+                        enum_types = tuple(type(k) for k in key_sample)
+                        # Parse the string key
+                        parts_str = key if isinstance(key, tuple) else key.split(",")
+                        # Convert to enum tuple
+                        key = tuple(enum_type(part) for enum_type, part in zip(enum_types, parts_str, strict=True))
+                    else:
+                        # Single enum key
+                        key = key_type(key)
                 current = current[key]
             case _:
                 msg = f"Unknown part type: {type(part)}"
