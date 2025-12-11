@@ -280,14 +280,38 @@ def test_table_with_triple_tuple_index() -> None:
         # Transform the input table by adding 100
         return vq.Table(
             {
-                (Region.NORTH, Product.WIDGET, Option.OPTION_A): input_table[(Region.NORTH, Product.WIDGET, Option.OPTION_A)] + 100,
-                (Region.NORTH, Product.WIDGET, Option.OPTION_B): input_table[(Region.NORTH, Product.WIDGET, Option.OPTION_B)] + 100,
-                (Region.NORTH, Product.GADGET, Option.OPTION_A): input_table[(Region.NORTH, Product.GADGET, Option.OPTION_A)] + 100,
-                (Region.NORTH, Product.GADGET, Option.OPTION_B): input_table[(Region.NORTH, Product.GADGET, Option.OPTION_B)] + 100,
-                (Region.SOUTH, Product.WIDGET, Option.OPTION_A): input_table[(Region.SOUTH, Product.WIDGET, Option.OPTION_A)] + 100,
-                (Region.SOUTH, Product.WIDGET, Option.OPTION_B): input_table[(Region.SOUTH, Product.WIDGET, Option.OPTION_B)] + 100,
-                (Region.SOUTH, Product.GADGET, Option.OPTION_A): input_table[(Region.SOUTH, Product.GADGET, Option.OPTION_A)] + 100,
-                (Region.SOUTH, Product.GADGET, Option.OPTION_B): input_table[(Region.SOUTH, Product.GADGET, Option.OPTION_B)] + 100,
+                (Region.NORTH, Product.WIDGET, Option.OPTION_A): input_table[
+                    (Region.NORTH, Product.WIDGET, Option.OPTION_A)
+                ]
+                + 100,
+                (Region.NORTH, Product.WIDGET, Option.OPTION_B): input_table[
+                    (Region.NORTH, Product.WIDGET, Option.OPTION_B)
+                ]
+                + 100,
+                (Region.NORTH, Product.GADGET, Option.OPTION_A): input_table[
+                    (Region.NORTH, Product.GADGET, Option.OPTION_A)
+                ]
+                + 100,
+                (Region.NORTH, Product.GADGET, Option.OPTION_B): input_table[
+                    (Region.NORTH, Product.GADGET, Option.OPTION_B)
+                ]
+                + 100,
+                (Region.SOUTH, Product.WIDGET, Option.OPTION_A): input_table[
+                    (Region.SOUTH, Product.WIDGET, Option.OPTION_A)
+                ]
+                + 100,
+                (Region.SOUTH, Product.WIDGET, Option.OPTION_B): input_table[
+                    (Region.SOUTH, Product.WIDGET, Option.OPTION_B)
+                ]
+                + 100,
+                (Region.SOUTH, Product.GADGET, Option.OPTION_A): input_table[
+                    (Region.SOUTH, Product.GADGET, Option.OPTION_A)
+                ]
+                + 100,
+                (Region.SOUTH, Product.GADGET, Option.OPTION_B): input_table[
+                    (Region.SOUTH, Product.GADGET, Option.OPTION_B)
+                ]
+                + 100,
             },
         )
 
