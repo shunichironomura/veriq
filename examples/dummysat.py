@@ -141,7 +141,7 @@ def calculate_temperature(
     return ThermalResult(solar_panel_temperature_max=temperature)
 
 
-@power.verification(imports=["Thermal"])
+@power.verification(imports=["Thermal"], xfail=True)
 def solar_panel_max_temperature(
     solar_panel_temperature_max: Annotated[
         float,
@@ -150,7 +150,7 @@ def solar_panel_max_temperature(
 ) -> bool:
     """Assert that the solar panel maximum temperature is within limits."""
     # Here we would implement the actual assertion logic.
-    return solar_panel_temperature_max < 85  # Example limit
+    return solar_panel_temperature_max < 45  # Example limit
 
 
 @power.calculation()

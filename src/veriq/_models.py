@@ -215,6 +215,7 @@ class Verification[**P]:
     default_scope_name: str = field()
     imported_scope_names: list[str] = field(default_factory=list)
     assumed_verifications: list[Verification[...]] = field(default_factory=list)
+    xfail: bool = field(default=False, kw_only=True)
 
     # Fields initialized in __post_init__
     dep_ppaths: dict[str, ProjectPath] = field(init=False)
@@ -314,6 +315,8 @@ class Scope:
         self,
         name: str | None = None,
         imports: Iterable[str] = (),
+        *,
+        xfail: bool = False,
     ) -> Callable[[Callable[P, bool]], Verification[P]]:
         """Decorator to mark a function as a verification in the scope."""
 
@@ -336,6 +339,7 @@ class Scope:
                 imported_scope_names=list(imports),
                 assumed_verifications=assumed_verifications,
                 default_scope_name=self.name,
+                xfail=xfail,
             )
             if verification_name in self._verifications:
                 msg = f"Verification with name '{verification_name}' already exists in scope '{self.name}'."
