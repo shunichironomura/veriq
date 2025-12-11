@@ -168,8 +168,8 @@ def calc(
     err_console.print()
 
     # Check verifications if requested
+    verification_failed = False
     if verify:
-        verification_failed = False
         verification_results: list[tuple[str, bool]] = []
 
         for ppath, value in results.items():
@@ -195,7 +195,6 @@ def calc(
 
         if verification_failed:
             err_console.print("[red]✗ Some verifications failed[/red]")
-            raise typer.Exit(1)
 
     # Export results
     err_console.print(f"[cyan]Exporting results to:[/cyan] {output}")
@@ -204,6 +203,11 @@ def calc(
     err_console.print()
     err_console.print("[green]✓ Calculation complete[/green]")
     err_console.print()
+
+    if verification_failed:
+        raise typer.Exit(code=1)
+
+    raise typer.Exit(code=0)
 
 
 @app.command()
