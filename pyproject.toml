@@ -1,6 +1,6 @@
 [project]
 name = "veriq"
-version = "0.1.1"
+version = "0.1.2"
 description = "A lightweight Python library for managing system requirements, verifications, and design."
 readme = "README.md"
 requires-python = ">=3.14"
