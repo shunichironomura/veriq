@@ -118,7 +118,7 @@ def _load_project_from_module_path(module_path: str) -> Project:
 
 
 @app.command()
-def calc(
+def calc(  # noqa: C901
     path: Annotated[
         str,
         typer.Argument(help="Path to Python script or module path (e.g., examples.dummysat:project)"),
