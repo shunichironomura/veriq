@@ -242,7 +242,7 @@ def get_value_by_parts(data: BaseModel, parts: tuple[PartBase, ...]) -> Any:
             case ItemPart(key):
                 # If accessing a Table, convert string key(s) to enum(s)
                 if isinstance(current, Table):
-                    key_type = current._key_type
+                    key_type = current.key_type
                     # Check if the key type is tuple (for multi-enum keys)
                     if key_type is tuple:
                         # Tuple key - get the enum types from the key sample
