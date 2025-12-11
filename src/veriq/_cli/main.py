@@ -118,7 +118,7 @@ def _load_project_from_module_path(module_path: str) -> Project:
 
 
 @app.command()
-def calc(
+def calc(  # noqa: C901
     path: Annotated[
         str,
         typer.Argument(help="Path to Python script or module path (e.g., examples.dummysat:project)"),
@@ -168,32 +168,38 @@ def calc(
     err_console.print()
 
     # Check verifications if requested
-    verification_failed = False
+    exit_as_err = False
     if verify:
-        verification_results: list[tuple[str, bool]] = []
+        verification_results: list[tuple[str, bool, bool]] = []
 
         for ppath, value in results.items():
             if isinstance(ppath.path, VerificationPath):
                 verification_name = ppath.path.verification_name
                 scope_name = ppath.scope
-                verification_results.append((f"{scope_name}::?{verification_name}", value))
-                if not value:
-                    verification_failed = True
+                scope = project.scopes[scope_name]
+                verification = scope.verifications[verification_name]
+                verification_results.append((f"{scope_name}::?{verification_name}", value, verification.xfail))
+                if (not value) ^ verification.xfail:
+                    exit_as_err = True
 
         # Create a table for verification results
         if verification_results:
             table = Table(show_header=True, header_style="bold cyan", box=None)
             table.add_column("Verification", style="dim")
-            table.add_column("Result", justify="center")
+            table.add_column("Result")
 
-            for verif_name, passed in verification_results:
+            for verif_name, passed, xfail in verification_results:
                 status = "[green]✓ PASS[/green]" if passed else "[red]✗ FAIL[/red]"
+                if xfail and not passed:
+                    status += " [yellow](expected failure)[/yellow]"
+                elif xfail and passed:
+                    status += " [red](unexpected pass)[/red]"
                 table.add_row(verif_name, status)
 
             err_console.print(Panel(table, title="[bold]Verification Results[/bold]", border_style="cyan"))
             err_console.print()
 
-        if verification_failed:
+        if any(not passed for _, passed, _ in verification_results):
             err_console.print("[red]✗ Some verifications failed[/red]")
 
     # Export results
@@ -204,7 +210,7 @@ def calc(
     err_console.print("[green]✓ Calculation complete[/green]")
     err_console.print()
 
-    if verification_failed:
+    if exit_as_err:
         raise typer.Exit(code=1)
 
     raise typer.Exit(code=0)
