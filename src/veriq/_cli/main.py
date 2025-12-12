@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -189,12 +190,14 @@ def calc(  # noqa: C901
             table.add_column("Result")
 
             for verif_name, passed, xfail in verification_results:
+                # Escape markup characters in verification name to display literally
+                escaped_verif_name = escape(verif_name)
                 status = "[green]✓ PASS[/green]" if passed else "[red]✗ FAIL[/red]"
                 if xfail and not passed:
                     status += " [yellow](expected failure)[/yellow]"
                 elif xfail and passed:
                     status += " [red](unexpected pass)[/red]"
-                table.add_row(verif_name, status)
+                table.add_row(escaped_verif_name, status)
 
             err_console.print(Panel(table, title="[bold]Verification Results[/bold]", border_style="cyan"))
             err_console.print()
