@@ -19,9 +19,26 @@ logger = logging.getLogger(__name__)
 
 
 def _serialize_value(value: Any) -> Any:
-    """Serialize a value for TOML export, handling special types like Table."""
+    """Recursively serialize a value for TOML export, handling special types.
+
+    Handles:
+    - Pydantic BaseModel: Converts to dict via model_dump()
+    - Table: Converts enum keys to strings and recursively serializes values
+    - dict: Recursively serializes values
+    - list/tuple: Recursively serializes items
+    - Primitives and TOML-native types: Returns as-is
+    """
+    # Import BaseModel locally to avoid potential circular imports
+    from pydantic import BaseModel  # noqa: PLC0415
+
+    # Handle Pydantic BaseModel - convert to dict and recursively serialize
+    if isinstance(value, BaseModel):
+        # Use mode='python' to preserve Python types (datetime, Decimal, etc.)
+        # which are TOML-compatible, rather than converting to JSON types
+        return _serialize_value(value.model_dump(mode="python"))
+
+    # Handle Table (dict with enum keys) - convert keys to strings and serialize values
     if isinstance(value, Table):
-        # Convert Table (dict with enum keys) to dict with string keys
         result = {}
         for k, v in value.items():
             if isinstance(k, tuple):
@@ -33,8 +50,19 @@ def _serialize_value(value: Any) -> Any:
             else:
                 # Other types
                 key_str = str(k)
-            result[key_str] = v
+            # Recursively serialize the value
+            result[key_str] = _serialize_value(v)
         return result
+
+    # Handle dict - recursively serialize values
+    if isinstance(value, dict):
+        return {k: _serialize_value(v) for k, v in value.items()}
+
+    # Handle list/tuple - recursively serialize items
+    if isinstance(value, (list, tuple)):
+        return [_serialize_value(item) for item in value]
+
+    # Primitives and TOML-native types (str, int, float, bool, datetime, etc.)
     return value
 
 
