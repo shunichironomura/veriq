@@ -21,7 +21,6 @@ dependencies = [
   "pydantic>=2.11.7",
   "rich>=14.0.0",
   "scoped-context>=0.0.1",
-  # "spacecraft-thermal-multi-node-analysis",
   "tomli-w>=1.1.0",
   "typer>=0.16.1",
 ]
@@ -47,7 +46,6 @@ license = [
 ruff = ["ruff>=0.11.13"]
 test = [
   "pytest>=8.4.0",
-  # "coverage>=7.8.2", # If you use coverage
 ]
 typing = [
   "basedpyright>=1.33.0",
@@ -130,7 +128,3 @@ unfixable = [
   "ARG001",  # Unused function argument
   "ERA001",  # Commented out code
 ]
-
-# [tool.uv.sources]
-# "spacecraft-thermal-multi-node-analysis" = { git = "ssh://git@github.com/ut-issl/spacecraft-thermal-multi-node-analysis", branch = "mypy" }
-# "spacecraft-thermal-multi-node-analysis" = { path = "../../ut-issl/spacecraft-thermal-multi-node-analysis", editable = true }

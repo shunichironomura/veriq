@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import StrEnum, unique
 from typing import Annotated
 
 from pydantic import BaseModel
@@ -20,12 +20,14 @@ project.add_scope(thermal)
 project.add_scope(rwa)
 
 
+@unique
 class OperationMode(StrEnum):
     NOMINAL = "nominal"
     SAFE = "safe"
     MISSION = "mission"
 
 
+@unique
 class OperationPhase(StrEnum):
     INITIAL = "initial"
     CRUISE = "cruise"
